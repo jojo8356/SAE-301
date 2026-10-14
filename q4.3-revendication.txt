@@ -1,0 +1,138 @@
+=============================================================================
+AnimeTCG - SAE BUT2 S3 - QUESTION Q4.3 (version complete)
+Modalites de la transaction de revendication
+Statut : TRANCHEE le 18/09/2026 (decision d'equipe)
+Ecrit dans le cahier des charges : paragraph 4.7.2, DEC-10 et DEC-11,
+annexe D.3 ; critere de recette REC-18.
+=============================================================================
+
+-----------------------------------------------------------------------------
+1. LA QUESTION
+-----------------------------------------------------------------------------
+Que contient la transaction de revendication, et que se passe-t-il si l'autre
+partie ne repond pas ?
+
+Rappel du mecanisme : un utilisateur legitime sur une carte (porteur legitime
+reconnu, voir Q4.1) demande a en devenir le proprietaire courant. Cette
+demande adressee au proprietaire courant s'appelle la revendication.
+
+-----------------------------------------------------------------------------
+2. CE QUE CONTIENT LA TRANSACTION
+-----------------------------------------------------------------------------
+  - Une offre explicite : justification + engagement symbolique
+  - La conservation des recommandations acquises par la carte
+  - La conservation du statut des cartes issues de battles
+  - Un horodatage + un identifiant de transaction, inscrits en blockchain
+  - (option a trancher) une transaction symbolique en points de valeur,
+    comme un "prix"
+
+Conditions prealables : le demandeur est legitime, la carte est ACTIVE, et le
+demandeur n'en est pas deja le proprietaire.
+
+-----------------------------------------------------------------------------
+3. SI LE PROPRIETAIRE NE REPOND PAS - les options examinees
+-----------------------------------------------------------------------------
+  A - Apres 120 s : acceptation par defaut SI le proprietaire ne s'est pas
+      connecte depuis 7 jours, sinon refus par defaut
+  B - Toujours refus par defaut (attente indefinie)
+  C - Toujours acceptation par defaut au bout du delai de 120 s
+  D - La transaction reste ouverte jusqu'a connexion du proprietaire
+  E - Arbitrage par scrutin des utilisateurs connectes
+  F - LE SILENCE VAUT ACCORD AU BOUT D'UN MOIS : une demande non refusee
+      pendant 30 jours rend le demandeur legitime PROPRIETAIRE COURANT de la
+      carte
+
+  => OPTION RETENUE : F
+
+Pourquoi : regle de droit commun sur le silence prolonge. Un proprietaire
+absent ou injoignable ne doit pas bloquer une carte indefiniment. C'est plus
+simple que l'option A, qui obligeait a suivre une date de derniere connexion et
+faisait echouer la demande d'un proprietaire silencieux mais recemment connecte.
+
+-----------------------------------------------------------------------------
+4. QUESTION LIEE - FAUT-IL UNE NOTION DE LITIGE ?
+-----------------------------------------------------------------------------
+  A - Oui : recours du revendiquant legitime, arbitre par scrutin interne
+  B - Non : la decision du proprietaire est definitive
+
+  => OPTION RETENUE : B - AUCUN LITIGE
+
+La revendication est un accord entre les deux parties. Un refus explicite est
+un statu quo : la carte reste au proprietaire, la demande est close, il n'y a
+ni juge, ni vote, ni arbitrage, ni recours. Seule trace conservee : le refus
+est journalise (il n'est pas inscrit comme action validee en blockchain).
+
+-----------------------------------------------------------------------------
+5. REPONSE RETENUE
+-----------------------------------------------------------------------------
+  Contenu de la transaction
+      Offre explicite : justification + engagement symbolique (conservation
+      des recommandations acquises et du statut des cartes issues de
+      battles), horodatage et identifiant de transaction inscrits en
+      blockchain.
+
+  Silence du proprietaire
+      30 jours (1 mois) sans refus => le demandeur devient proprietaire de la
+      carte.
+
+  Refus
+      Statu quo definitif : la carte reste au proprietaire, la demande est
+      close, aucun recours.
+
+  Litige
+      Aucune notion de litige : ni juge, ni vote, ni arbitrage, c'est un
+      accord bilaterale.
+
+  Fenetre de 120 secondes
+      Devient la fenetre de decision AFFICHEE en demonstration. Sans reponse,
+      la demande ne bascule pas en refus : elle reste en attente et suit la
+      regle du mois.
+
+  Demonstrativite
+      120 s : joue en direct pendant la demonstration.
+      30 jours : non demontrable en direct => documente + couvert par un test
+      automatise a horloge simulee (REC-18).
+
+-----------------------------------------------------------------------------
+6. REPONSE EN TEXTE SIMPLE (a recopier telle quelle)
+-----------------------------------------------------------------------------
+Q4.3 - Modalites de la transaction de revendication
+
+Reponse : la revendication est un accord entre les deux parties, et le silence
+du proprietaire pendant un mois vaut accord.
+
+Contenu de la transaction : une offre explicite adressee au proprietaire
+courant, avec une justification, un engagement symbolique (la conservation des
+recommandations acquises par la carte et du statut des cartes issues de
+battles), un horodatage, et un identifiant de transaction inscrit dans la
+blockchain.
+
+Condition prealable : le demandeur doit etre legitime sur la carte, la carte
+doit etre ACTIVE, et le demandeur ne doit pas en etre deja le proprietaire.
+
+Deux issues possibles :
+- Le proprietaire accepte : le transfert de propriete est inscrit dans la
+  blockchain, l'ancien proprietaire reste dans l'historique.
+- Le proprietaire refuse : statu quo, la carte reste au proprietaire, la
+  demande est close. Le refus est journalise mais n'est pas inscrit comme
+  action validee.
+
+S'il ne repond pas : le silence vaut accord au bout d'un mois. Une demande de
+revendication qui n'a pas ete refusee pendant 30 jours rend automatiquement le
+demandeur legitime proprietaire courant de la carte. C'est une regle de droit
+commun sur le silence prolonge : elle evite qu'une carte reste bloquee parce
+que son proprietaire ne se connecte plus. En demonstration, on affiche une
+fenetre de decision de 120 secondes, mais sans reponse la demande ne bascule
+pas en refus : elle reste en attente et suit la regle du mois.
+
+Litige : aucun. Il n'y a ni juge, ni vote, ni arbitrage. C'est un accord
+bilaterale entre les deux utilisateurs : le proprietaire a le dernier mot et un
+refus ne change rien.
+
+Demonstration : la fenetre de 120 secondes et le refus se jouent en direct. La
+regle des 30 jours n'est pas demontrable en direct, elle est documentee et
+couverte par un test automatise avec horloge simulee.
+
+=============================================================================
+Fin de la question Q4.3 - AnimeTCG
+=============================================================================

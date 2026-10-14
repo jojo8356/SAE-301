@@ -1,0 +1,96 @@
+@startuml 11-sequence-revendication
+' AnimeTCG - SAÉ BUT2 S3 - séquence : revendication d'une carte (EF-19 / CU-19)
+' Règles : §4.7.2 du cahier des charges, DEC-10 et DEC-11 (réponses du 18/09/2026) :
+'   • accord du propriétaire courant
+'   • refus explicite = statu quo définitif, AUCUN recours (pas de litige)
+'   • silence pendant 30 jours = transfert automatique
+' Protocole : claim.request et claim.respond
+autonumber
+
+actor "Revendiquant\n(porteur légitime)" as RQ
+actor "Propriétaire\ncourant" as OW
+participant "Serveur (C)\nboucle sockets" as SV
+participant "Worker métier" as WK
+participant "Blockchain" as BC
+database "PostgreSQL" as DB
+
+== Dépôt de la revendication ==
+
+RQ -> SV : REQ claim.request\npayload { card_id=42, justification }
+SV -> WK : dispatch
+activate WK
+WK -> WK : valide :\n• le demandeur est porteur légitime (DEC-10)\n• la carte est ACTIVE\n• le demandeur n'est pas déjà propriétaire\n• aucune revendication en attente sur la carte
+alt conditions non remplies
+  WK --> SV : ERR 1014 / 1015 / 1016
+  SV --> RQ : RES ERR
+else recevable
+  WK -> BC : mine → bloc (action = DEMANDE_REVENDICATION)
+  BC --> WK : block_index=131
+  WK -> DB : INSERT blocks ; INSERT claims (state=PROPOSEE) ; COMMIT
+  WK -> WK : calcule auto_transfer_at = maintenant + 30 jours\net decision_deadline = maintenant + 120 s (affichage seul)
+  WK --> SV : OK claim_id=7, decision_deadline, auto_transfer_at
+  SV --> RQ : RES OK
+  SV -> OW : EVT claim.received  (DIFFUSION CIBLÉE : propriétaire uniquement)
+  OW -> OW : voit la demande et l'échéance\ndu transfert automatique
+end
+deactivate WK
+
+== Réponse du propriétaire (fenêtre de 120 s affichée) ==
+
+alt 1 — Le propriétaire ACCEPTE
+  OW -> SV : REQ claim.respond  payload { claim_id=7, decision="accept" }
+  SV -> WK : dispatch
+  activate WK
+  WK -> WK : vérifie que la revendication est encore ouverte
+  WK -> BC : mine → bloc (action = TRANSFERT_PROPRIETE)
+  BC --> WK : block_index=134
+  WK -> DB : BEGIN ; INSERT blocks ;\nUPDATE cards SET owner_id=demandeur ;\nUPDATE claims SET state='ACCEPTEE' ; COMMIT
+  WK --> SV : OK outcome=TRANSFERE, block_index=134
+  deactivate WK
+  SV --> OW : RES OK
+  SV -> RQ : EVT claim.transferred
+  SV -> SV : EVT value.updated + mise à jour de l'affichage\n(l'ancien propriétaire reste dans l'historique)
+
+else 2 — Le propriétaire REFUSE
+  OW -> SV : REQ claim.respond  payload { claim_id=7, decision="refuse" }
+  SV -> WK : dispatch
+  activate WK
+  WK -> WK : statu quo — la carte reste au propriétaire
+  WK -> DB : UPDATE claims SET state='REFUSEE' ;\njournal INFO côté serveur (ENF-40)
+  note right of WK
+    Le refus n'est PAS inscrit comme
+    action validée en blockchain (§4.7.2).
+    Aucun recours : ni juge, ni vote,
+    ni arbitrage — la demande est close.
+  end note
+  WK --> SV : OK outcome=REFUSE
+  deactivate WK
+  SV --> OW : RES OK
+  SV -> RQ : EVT claim.responded outcome=REFUSE
+  RQ -> RQ : la carte reste au propriétaire, définitivement
+
+else 3 — SILENCE : la fenêtre de 120 s expire, puis les 30 jours
+  note over OW, SV : la demande reste EN ATTENTE\n(elle ne bascule pas en refus)
+  SV -> SV : à l'expiration des 120 s :\nnouvelle tentative de notification,\nétat inchangé (PROPOSEE)
+
+  ... 30 jours plus tard (horloge simulée en test — REC-18) ...
+
+  SV -> WK : échéance auto_transfer_at atteinte
+  activate WK
+  WK -> WK : vérifie qu'aucun refus explicite n'est intervenu
+  WK -> BC : mine → bloc (action = TRANSFERT_PROPRIETE_AUTO)
+  BC --> WK : block_index=402
+  WK -> DB : INSERT blocks ;\nUPDATE cards SET owner_id=demandeur ;\nUPDATE claims SET state='TRANSFEREE' ; COMMIT
+  WK --> SV : OK outcome=TRANSFERE_AUTOMATIQUE
+  deactivate WK
+  SV -> RQ : EVT claim.transferred (motif = silence)
+  SV -> SV : journal : ancien propriétaire absent,\nrevendication non refusée → transfert (DEC-11)
+
+  note over RQ, DB
+    Le silence prolongé vaut accord : une carte ne reste pas
+    bloquée parce que son propriétaire ne se connecte plus.
+    Ce cas n'est PAS démontrable en direct devant un jury :
+    il est couvert par un test automatisé à horloge simulée.
+  end note
+end
+@enduml

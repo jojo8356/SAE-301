@@ -1,0 +1,58 @@
+@startuml 14-sequence-partage
+' AnimeTCG - SAÉ BUT2 S3 - séquence : partage ciblé entre amis (DEC-15, réponse Q5.2)
+' Retenu le 22/09/2026 : destinataires = liste d'amis ; acceptation → le demandeur se déplace.
+' Anti-spam : 3 partages puis 1 par minute (réglable par l'utilisateur).
+' ✅ Depuis le 22/09/2026, le partage EST inscrit en blockchain (option A) : envoi et
+' acceptation produisent chacune un bloc ; la liste d'amis reste un réglage hors chaîne.
+autonumber
+
+actor "Expéditeur\n(propriétaire)" as E
+participant "Client JavaFX" as CL1
+participant "Serveur (C)" as SV
+participant "Worker métier" as WK
+database "PostgreSQL\n(shares, friendships)" as DB
+actor "Destinataire\n(ami)" as D
+participant "Client JavaFX" as CL2
+
+E -> CL1 : ouvre « Partager »\nsur une de ses cartes actives
+CL1 -> SV : share.send(to_user_id, card_id)
+SV -> WK : traite la demande
+activate WK
+
+alt refusé
+  WK -> WK : vérifie : carte ACTIVE,\ndestinataire dans la liste d'amis,\nanti-spam (3 puis 1/min),\ndestinataire sous 100 cartes actives
+  WK --> SV : REFUS (motif précis)
+  SV --> CL1 : REFUS + message compréhensible
+  note right of SV : share.send absent du catalogue\ndes codes métier : on réutilise\n1014 (non ami), 1003, 1001, 1015
+else accepté pour traitement
+  WK -> DB : INSERT shares (state = ENVOYE)
+  DB --> WK : share_id
+  WK --> SV : share_id, state
+  SV -> CL1 : ACCEPTE (share_id)
+  SV -> CL2 : événement share.received\n(share_id, card_id, from_user_id)
+  note right of CL2 : notification poussée\nsur la socket, si l'ami est connecté
+end
+
+deactivate WK
+
+D -> CL2 : répond dans l'interface
+CL2 -> SV : share.respond(share_id, decision)
+SV -> WK : applique la décision
+activate WK
+
+alt decision = accept
+  WK -> WK : Carte : le DEMANDEUR se déplace\n(owner_id = to_user_id)
+  WK -> DB : UPDATE shares (ACCEPTE, decided_at)
+  WK --> SV : card_id, outcome = deplacee
+  SV -> CL1 : événement share.responded\n(accepted = true)
+  SV -> CL2 : carte ajoutée à « Mes cartes »
+  note right of WK : ✅ Un bloc est miné pour le partage\n(option A du 22/09/2026) :\nle transfert est inscrit en chaîne
+else decision = refuse
+  WK -> DB : UPDATE shares (REFUSE, decided_at)
+  WK --> SV : outcome = statu_quo
+  SV -> CL1 : événement share.responded\n(accepted = false)
+  note right of SV : Personne ne bouge :\ncarte, valeurs et droits inchangés
+end
+
+deactivate WK
+@enduml

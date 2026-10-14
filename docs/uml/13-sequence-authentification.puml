@@ -1,0 +1,63 @@
+@startuml 13-sequence-authentification
+' AnimeTCG - SAÉ BUT2 S3 - séquence : authentification d'une carte
+' CU-20 (rétabli par le sujet officiel 2026-2027), DEC-24, §4.7.3 du cahier des charges.
+' Acteur : un PORTEUR LÉGITIME actif sur la carte (légitimation acceptée).
+autonumber
+
+actor "Porteur légitime\n(client Java/JavaFX)" as L
+participant "Vue JavaFX\n(AuthenticationView)" as V
+participant "AuthenticationController" as C
+participant "ServerConnection\n(socket, Java)" as N
+participant "Serveur C\n(net → protocol)" as S
+participant "business\n(authentication.c)" as B
+participant "chain\n(header.c + SHA-256)" as K
+database "PostgreSQL" as DB
+
+L -> V : « Authentifier cette carte »
+V -> C : authenticate(cardId, justification)
+C -> N : card.authenticate
+N -> S : [longueur][JSON]
+
+S -> S : validation de forme\n(types, bornes, liste fermée)
+S -> B : action card.authenticate
+
+B -> B : demandeur = porteur légitime ?\n(sinon 1014)
+B -> B : carte ACTIVE ?\n(sinon 1003)
+B -> B : authentification déjà active ?\n(sinon 1018)
+
+B -> K : construire l'en-tête 96 octets\n(action_id=authentification, payload_canon)
+K -> K : SHA-256 + preuve de travail\n(difficulté en vigueur,\nfourchette 0,3–2 s)
+K --> B : nonce + hash
+
+B -> DB : UNE transaction :\nINSERT blocks + projection authentications
+DB --> B : ok
+
+B --> S : succès (block_index, authenticated_at)
+S --> N : RES status=OK
+N --> C : réponse corrélée (r=…)
+C -> C : MDC c= / r= (journalisation)
+C --> V : badge « authentifiée »
+S --> L : EVT card.authenticated\n(diffusé à TOUS les clients, y compris l'émetteur)
+
+group Révocation — action card.revoke_authentication (DEC-24)
+  L -> V : « Révoquer l'authentification »
+  V -> C : revokeAuthentication(cardId)
+  C -> N : card.revoke_authentication
+  N -> S : [longueur][JSON]
+  S -> B : action card.revoke_authentication
+  B -> B : authentification ACTIVE ?\n(sinon 1019, ou 1014 si non légitimé)
+  B -> K : bloc de révocation (action_id=revocation_auth)
+  K --> B : nonce + hash
+  B -> DB : UNE transaction :\nINSERT blocks + UPDATE authentications\n(state = REVOQUEE, revoked_block_index)
+  DB --> B : ok
+  B --> S : succès (block_index)
+  S --> L : EVT card.authenticated\n(revoked = true) → tous les clients
+end
+
+note over B, DB
+  Aucun effet sur la valeur : l'authentification est un
+  label de confiance (DEC-24). Un refus n'est jamais inscrit
+  comme action validée ; une révocation, si : elle fait un bloc
+  et n'efface pas l'inscription d'origine (§4.7.3).
+end note
+@enduml

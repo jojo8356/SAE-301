@@ -1,0 +1,65 @@
+@startuml 09-sequence-creation-carte
+' AnimeTCG - SAÉ BUT2 S3 - séquence : création d'une carte (EF-11 / CU-11)
+' Protocole : docs/protocole-applicatif.md, action card.create
+autonumber
+
+actor "Utilisateur" as U
+participant "Client JavaFX\n(vue)" as V
+participant "Contrôleur\n(card)" as CT
+participant "Modèle\n(client)" as M
+participant "Service réseau\n(socket)" as NET
+participant "Serveur (C)\nboucle sockets" as SV
+participant "Worker métier" as WK
+participant "Blockchain" as BC
+database "PostgreSQL" as DB
+
+U -> V : ouvre « Nouvelle carte »\net saisit les champs obligatoires
+V -> CT : creer(champs)
+CT -> CT : validation locale (types, bornes)\n— retour immédiat, sans réseau
+alt saisie invalide
+  CT --> V : champs en rouge + message
+  V --> U : corrige la saisie
+else saisie valide
+  CT -> M : creerCarte(champs)
+  M -> NET : REQ card.create  id=a1b2c3d4e5f6  v=1.0
+  NET -> SV : trame [4 octets longueur][JSON UTF-8]
+  SV -> WK : dispatch vers le worker (hors boucle)
+  activate WK
+  WK -> WK : valide côté serveur\n(ENF-44 : types, listes fermées,\n1950 ≤ year ≤ année+1, genres ≥ 1)
+  WK -> BC : vérifie la limite\n(≤ 100 cartes ACTIVE — Q1.4)
+  alt refus métier
+    WK --> SV : ERR 1001 CARD_LIMIT_REACHED
+    SV --> NET : RES status=ERR  id=a1b2c3d4e5f6
+    NET -> M : erreur corrélée
+    M -> CT : onErreur(error)
+    CT --> V : message clair
+    note right
+      Aucun bloc créé (REC-09),
+      aucun évènement diffusé.
+    end note
+  else création acceptée
+    WK -> BC : mine(difficulté courante)\n— hors du chemin bloquant (ENF-18)
+    activate BC
+    BC --> WK : bloc (index, nonce, hash, duration_ms)
+    deactivate BC
+    WK -> DB : BEGIN ; INSERT blocks ;\nINSERT cards ; INSERT card_genres ; COMMIT
+    alt base indisponible
+      DB --> WK : erreur
+      WK -> WK : bloc conservé en mémoire,\nréessai différé, journal WARN (ENF-06)
+    else base disponible
+      DB --> WK : ok
+    end
+    WK --> SV : OK card_id=42, block_index=118, hash
+  end
+  deactivate WK
+  SV --> NET : RES status=OK  id=a1b2c3d4e5f6
+  NET -> M : réponse ré-associée par identifiant (ENF-20)
+  M -> M : ajoute la carte au contexte local
+  M --> V : notifie les observateurs
+  V --> U : la carte apparaît dans « Mes cartes »
+
+  SV -> SV : EVT card.created (tous les clients)
+  SV -> SV : EVT value.updated (tous)
+  SV -> SV : EVT block.mined (difficulté, nonce, durée)
+end
+@enduml

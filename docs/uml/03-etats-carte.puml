@@ -1,0 +1,43 @@
+@startuml 03-etats-carte
+' AnimeTCG - SAÉ BUT2 S3 - diagramme d'états d'une carte (phase 1)
+' Correspond au §4.4 du cahier des charges.
+[*] --> ACTIVE : création validée (EF-11)
+
+state ACTIVE {
+  ACTIVE : recommandable
+  ACTIVE : battle possible
+}
+
+state EN_BATTLE {
+  EN_BATTLE : recommandations toujours comptées
+  EN_BATTLE : aucune nouvelle battle possible
+}
+
+state INACTIVE {
+  INACTIVE : non recommandable
+  INACTIVE : visible mais grisée
+}
+
+state ARCHIVEE {
+  ARCHIVEE : ses recommandations actives\nont été transférées à la gagnante
+  ARCHIVEE : n'est plus affichée\n(historique seul)
+  ARCHIVEE : droits INCHANGÉS\n(légitimation, revendications, auth)
+}
+
+ACTIVE --> EN_BATTLE : battle acceptée (EF-15)
+EN_BATTLE --> ACTIVE : battle annulée\n(quorum non atteint\nou 0 vote — Q2.5)
+EN_BATTLE --> ACTIVE : la carte gagne (EF-17)
+EN_BATTLE --> ARCHIVEE : la carte perd (EF-17)\narchivage définitif (Q2.6)
+
+ACTIVE --> INACTIVE : répudiation massive /\ncritère défini /\ndemande d'un légitime (EF-21)
+INACTIVE --> ACTIVE : réactivation\n(règle explicite)
+
+note right of ARCHIVEE
+  Aucune transition ne supprime
+  de bloc de la blockchain :
+  l'historique est immuable.
+  ARCHIVEE ne revient jamais
+  en ACTIVE (réponse Q2.6) ;
+  INACTIVE, si (choix de l'utilisateur).
+end note
+@enduml

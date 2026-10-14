@@ -1,0 +1,65 @@
+@startuml 01-cas-utilisation
+' AnimeTCG - SAÉ BUT2 S3 - diagramme de cas d'utilisation (phase 1)
+' Source UML : à compléter et à exporter en PNG/SVG dans la spec technique.
+left to right direction
+skinparam packageStyle rectangle
+
+actor "Utilisateur\n(client Java/JavaFX)" as U
+actor "Porteur légitime" as L
+actor "Client de test automatisé\n(outil, hors démonstration)" as B
+actor "Administrateur\n(exploitation, démo)" as A
+
+rectangle "Plateforme AnimeTCG" {
+  usecase "Se connecter au serveur\n(IP + port)" as UC05
+  usecase "Reconstituer son contexte\naprès une reconnexion" as UC07
+  usecase "Créer une carte d'anime" as UC11
+  usecase "Recommander une carte" as UC12
+  usecase "Consulter ses recommandations\net ses partages" as UC13
+  usecase "Répudier une recommandation" as UC14
+  usecase "Lancer une battle" as UC15
+  usecase "Voter dans une battle" as UC16
+  usecase "Appliquer le résultat\nd'une battle" as UC17
+  usecase "Demander une légitimation" as UC18
+  usecase "Revendiquer une carte" as UC19
+  usecase "Authentifier une carte" as UC20
+  note bottom of UC20
+    RÉTABLI le 22/09/2026 : exigé par le
+    sujet officiel 2026-2027 (CU-20,
+    §12.1 de la démonstration).
+    Règles : §4.7.3 et DEC-24.
+    La révocation de l'authentification
+    est une action de la même famille
+    (card.revoke_authentication).
+  end note
+  usecase "Rendre une carte inactive" as UC21
+  usecase "Consulter cartes, valeurs\net utilisateurs connectés" as UC23
+  usecase "Se déconnecter\n(fin de session)" as UC25
+
+  usecase "Vérifier la cohérence\nde la blockchain" as UC26
+  usecase "Restaurer le contexte\nau démarrage" as UC22
+  usecase "Arrêter proprement\nle serveur" as UC27
+}
+
+U --> UC05
+U --> UC07
+U --> UC25
+U --> UC11
+U --> UC12
+U --> UC13
+U --> UC14
+U --> UC15
+U --> UC16
+U --> UC23
+
+L --> UC18
+L --> UC19
+L --> UC20
+L --> UC21
+
+B --> UC05
+B --> UC11
+
+A --> UC26
+A --> UC22
+A --> UC27
+@enduml

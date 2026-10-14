@@ -1,0 +1,181 @@
+@startuml 02-classes-serveur
+' AnimeTCG - SAÉ BUT2 S3 - modèle de classes serveur (phase 1)
+' Serveur en C : les "classes" correspondent aux structures + fonctions associées.
+skinparam classAttributeIconSize 0
+
+class Card {
+  + card_id : int
+  + title_romaji : string
+  + title_english : string
+  + title_native : string
+  + format : Format
+  + studio : string
+  + year : int
+  + season : Season
+  + episodes : int
+  + duration_min : int
+  + genres : list<string>
+  + themes : list<string>
+  + source : Source
+  + franchise : string
+  + synopsis : string
+  + rating : float
+  + creator_id : int
+  + owner_id : int
+  + status : CardStatus
+  + created_at : timestamp
+}
+
+class User {
+  + user_id : int
+  + pseudo : string
+  + origin : Origin
+  + connected : bool
+  + last_seen : timestamp
+}
+
+class Recommendation {
+  + rec_id : int
+  + card_id : int
+  + user_id : int
+  + state : ACTIVE | REPUDIEE
+  + origin : Origin
+  + created_at : timestamp
+}
+
+class Battle {
+  + battle_id : int
+  + card_a_id : int
+  + card_b_id : int
+  + opened_at : timestamp
+  + closes_at : timestamp
+  + state : OUVERTE | CLOSE | NULLE
+  + winner_id : int
+}
+
+class Vote {
+  + vote_id : int
+  + battle_id : int
+  + user_id : int
+  + card_id : int
+  + weight : float
+  + created_at : timestamp
+}
+
+class Legitimation {
+  + legit_id : int
+  + card_id : int
+  + user_id : int
+  + statement : string
+  + state : EN_ATTENTE | ACCEPTEE | REJETEE | REVOQUEE
+  + created_at : timestamp
+}
+
+class Claim {
+  + claim_id : int
+  + card_id : int
+  + claimant_id : int
+  + owner_id : int
+  + state : PROPOSEE | ACCEPTEE | REFUSEE | EXPIREE
+  + created_at : timestamp
+  + decided_at : timestamp
+}
+
+class Authentification {
+  + authentication_id : int
+  + card_id : int
+  + user_id : int            ' porteur legitime
+  + legitimation_id : int
+  + state : AuthState        ' ACTIVE | REVOQUEE
+  + created_at : timestamp
+  + revoked_at : timestamp?
+  + block_index : int
+  --
+  + est_active() : bool
+  + affecte_la_valeur() : bool   ' toujours faux (DEC-24)
+}
+
+class Block {
+  + index : int
+  + timestamp : timestamp
+  + action_type : string
+  + payload : json
+  + previous_hash : string(64)
+  + nonce : uint64
+  + hash : string(64)
+  + mine(difficulty) : Block
+  + verify(difficulty) : bool
+}
+
+class Blockchain {
+  + blocks : list<Block>
+  + difficulty : int
+  + genesis() : Block
+  + append(action) : Block
+  + verifyChain() : VerificationReport
+  + restoreFromDb() : void
+}
+
+class ActionRequest {
+  + request_id : string
+  + protocol_version : int
+  + action : string
+  + user_id : int
+  + payload : json
+}
+
+class ActionResult {
+  + request_id : string
+  + status : OK | REFUS
+  + error_code : string
+  + message : string
+  + payload : json
+}
+
+User "1" -- "0..*" Card : crée / possède >
+User "1" -- "0..*" Recommendation : émet >
+Card "1" -- "0..*" Recommendation : reçoit >
+Card "2" -- "0..*" Battle : participe >
+User "1" -- "0..*" Vote : exprime >
+Battle "1" -- "0..*" Vote : reçoit >
+Card "1" -- "0..*" Legitimation : concerne >
+User "1" -- "0..*" Legitimation : demande >
+Card "1" -- "0..*" Claim : concerne >
+User "1" -- "0..*" Authentification : emet (legitime) >
+Card "1" -- "0..1" Authentification : est certifiee par >
+Legitimation "1" -- "0..*" Authentification : autorise >
+User "1" -- "0..*" Claim : revendique >
+Blockchain "1" *-- "1..*" Block : contient >
+Block "1" -- "1" ActionRequest : journalise la validation de >
+ActionRequest "1" -- "1" ActionResult : produit >
+
+enum Format {
+  TV
+  MOVIE
+  OVA
+  ONA
+  SPECIAL
+}
+enum AuthState {
+  ACTIVE
+  REVOQUEE
+}
+
+enum CardStatus {
+  ACTIVE
+  EN_BATTLE
+  INACTIVE
+  ARCHIVEE
+}
+enum RarityRank {
+  FER
+  BRONZE
+  ARGENT
+  OR
+  PLATINE
+}
+enum Origin {
+  HUMAIN
+  TEST
+}
+@enduml

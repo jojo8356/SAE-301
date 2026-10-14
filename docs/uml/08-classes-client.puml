@@ -1,0 +1,210 @@
+@startuml 08-classes-client
+' AnimeTCG - SAÉ BUT2 S3 - diagramme de classes du client Java (DOC-03)
+' Architecture MVC imposée par l'encadrant (ENF-50) + service réseau.
+' La vue ne contient AUCUNE règle métier et AUCUN appel réseau direct.
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+package "view (JavaFX)" #LightYellow {
+  class MainWindow {
+    - statusBar : StatusBar
+    - queueOverlay : QueueOverlay
+    + afficherContexte(context)
+    + afficherPositionAttente(n, total)
+    + afficherErreur(error)
+  }
+  class CardsTab {
+    + rafraichir(cards)
+  }
+  class RecommendationsTab {
+    + rafraichir(recos)
+  }
+  class BattlesTab {
+    + afficherBattle(battle)
+    + afficherCloture(resultat)
+  }
+  class RightsTab {
+    + afficherScrutin(legitimation)
+    + afficherRevendication(claim)
+  }
+  class UsersTab {
+    + rafraichir(connectes)
+  }
+  class CreateCardDialog {
+    + saisir() : ChampsCarte
+  }
+  class ClaimDialog {
+    + saisir() : ChampsRevendication
+  }
+  class QueueOverlay
+}
+
+package "controller" #LightBlue {
+  class ConnectionController {
+    + connecter(ip, port, pseudo)
+    + deconnecter()
+  }
+  class CardController {
+    + creer(champs)
+    + lister(filtre)
+    + inactiver(card_id, motif)
+  }
+  class RecommendationController {
+    + recommander(card_id)
+    + repudier(card_id)
+  }
+  class BattleController {
+    + ouvrir(card_id, adversaire_id)
+    + voter(battle_id, card_id)
+  }
+  class RightsController {
+    + demanderLegitimation(card_id, justification)
+    + repondreLegitimation(id, decision)
+    + revendiquer(card_id, justification)
+    + repondreRevendication(id, decision)
+  }
+}
+
+package "model" #LightGreen {
+  class SessionModel {
+    - etat : DECONNECTE | EN_ATTENTE | ADMIS
+    - positionAttente : int
+    - sessionId : string
+    - utilisateur : User
+    - cartes : list<Card>
+    - recommandations : list<Recommendation>
+    - battles : list<Battle>
+    + connecter(pseudo)
+    + creerCarte(champs)
+    + recommander(card_id)
+    + repudier(card_id)
+    + ouvrirBattle(card_id, adversaire)
+    + voter(battle_id, card_id)
+    + demanderLegitimation(card_id, justification)
+    + revendiquer(card_id, justification)
+    + inactiver(card_id, motif)
+    + appliquerEvenement(event)
+    + ajouterObservateur(listener)
+  }
+  class Card {
+    + card_id : int
+    + title_romaji : string
+    + status : ACTIVE | EN_BATTLE | INACTIVE | ARCHIVEE
+    + valeur : double
+    + proprietaireId : int
+  }
+  class Recommendation {
+    + card_id : int
+    + auteurId : int
+    + poids : double
+    + etat : ACTIVE | REPUDIEE
+  }
+  class Battle {
+    + battle_id : int
+    + carteA : int
+    + carteB : int
+    + closesAt : timestamp
+    + monVote : int
+  }
+  class Vote {
+    + user_id : int
+    + card_id : int
+  }
+  class User {
+    + user_id : int
+    + pseudo : string
+    + connecte : bool
+  }
+  interface ModelObserver {
+    + onModeleModifie()
+    + onErreur(error)
+  }
+}
+
+package "net (service réseau)" #LightGray {
+  class ServerConnection {
+    - socket : Socket
+    - filLecture : Thread
+    - codec : ProtocolCodec
+    - correlateur : RequestCorrelator
+    + connecter(ip, port)
+    + envoyer(requete)
+    + fermer()
+    - boucleLecture()
+    - gererErreur(error)
+  }
+  class ProtocolCodec {
+    + encoder(message) : byte[4 + n]
+    + decoder(trame) : Message
+    + validerTaille(n)
+  }
+  class RequestCorrelator {
+    - enAttente : map<id, ReponseFuture>
+    + enregistrer(id, delaiMs)
+    + completer(id, reponse)
+    + expirer(id)
+  }
+  class EventDispatcher {
+    + dispatcher(event, modele)
+    + ignorerEvenementInconnu(event)
+  }
+  class ErrorCatalog {
+    {static} + INTERNAL_ERROR : int
+    {static} + INVALID_PARAMS : int
+    {static} + QUEUE_FULL : int
+    {static} + decrire(code) : string
+  }
+}
+
+' --- Dépendances autorisées (sens unique : vue -> contrôleur -> modèle -> réseau) ---
+MainWindow --> ConnectionController
+MainWindow --> CardController
+MainWindow --> RecommendationController
+MainWindow --> BattleController
+MainWindow --> RightsController
+
+ConnectionController --> SessionModel
+CardController --> SessionModel
+RecommendationController --> SessionModel
+BattleController --> SessionModel
+RightsController --> SessionModel
+
+SessionModel --> "0..*" Card : contient >
+SessionModel --> "0..*" Recommendation : contient >
+SessionModel --> "0..*" Battle : contient >
+Battle --> "0..*" Vote : reçoit >
+SessionModel --> User : ouvre >
+
+SessionModel ..> ModelObserver : notifie >
+MainWindow ..|> ModelObserver : observe >
+UsersTab ..|> ModelObserver
+CardsTab ..|> ModelObserver
+
+SessionModel --> ServerConnection : utilise >
+ServerConnection --> ProtocolCodec
+ServerConnection --> RequestCorrelator
+ServerConnection --> EventDispatcher
+ServerConnection ..> ErrorCatalog : traduit les codes >
+
+' Le contrôleur ne connaît que le modèle : il ne touche jamais la socket.
+note top of CardController
+  Interdit : un contrôleur n'appelle JAMAIS
+  la couche réseau directement — il passe
+  par le modèle, qui passe par ServerConnection.
+  (ENF-50 : la vue ne contient aucune règle
+  métier, le contrôleur aucun appel socket.)
+end note
+note bottom of ServerConnection
+  SEUL point de contact avec le réseau.
+  Aucune autre classe n'ouvre de socket,
+  aucun import java.net hors de ce paquet (ENF-50, REC-14).
+end note
+
+note right of RequestCorrelator
+  Corrélation requête/réponse par
+  l'identifiant de demande du protocole
+  (ENF-20) : la réponse arrive dans
+  un ordre quelconque, elle est
+  ré-associée à sa demande.
+end note
+@enduml

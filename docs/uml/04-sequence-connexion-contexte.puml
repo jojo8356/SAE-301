@@ -1,0 +1,43 @@
+@startuml 04-sequence-connexion-contexte
+' AnimeTCG - SAÉ BUT2 S3 - séquence : connexion d'un client + reconstitution du contexte
+' Correspond aux CU-5 et CU-7 du sujet.
+autonumber
+
+actor "Utilisateur" as U
+participant "Client JavaFX" as CL
+participant "Serveur (C)\nboucle sockets" as SV
+participant "Worker métier" as WK
+participant "Blockchain" as BC
+database "PostgreSQL" as DB
+
+U -> CL : saisit IP, port, pseudo
+CL -> SV : connexion TCP\nREQ session.hello (v=1.0, pseudo, supported=["1.0"])
+SV -> SV : vérifie capacité\n(max_clients non atteint ?)
+
+alt capacité atteinte (100 clients déjà admis)
+  SV --> CL : RES status=QUEUED\n"en attente, position N" (ENF-54)
+  SV -> SV : journalise l'entrée en file (aucun bloc créé)
+  ... une place se libère ...
+  SV -> CL : EVT session.welcome + contexte\n(admission automatique, ordre d'arrivée)
+else place disponible
+  SV --> CL : RES status=OK + session_id
+  SV -> WK : demande de reconstitution du contexte(user_id)
+  activate WK
+  WK -> BC : parcourt les blocs (cartes, recos,\nbattles, légitimations, revendications)
+  activate BC
+  BC --> WK : contexte reconstruit (ou vide si aucune donnée)
+  deactivate BC
+  opt base de données disponible
+    WK -> DB : lecture des blocs sauvegardés
+    DB --> WK : blocs
+  end
+  alt base indisponible ou en erreur
+    WK -> WK : considère qu'aucun contexte de sauvegarde n'existe (ENF-06)
+  end
+  WK --> SV : contexte du client
+  deactivate WK
+  SV --> CL : contexte initial\n(cartes créées, possédées, recos données/reçues, battles, valeurs)
+  SV -> SV : diffuse l'événement "utilisateur connecté" aux autres clients
+  CL -> U : affiche les écrans avec les données chargées
+end
+@enduml

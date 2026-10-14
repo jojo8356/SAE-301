@@ -1,0 +1,66 @@
+@startuml 10-sequence-recommandation-repudiation
+' AnimeTCG - SAÉ BUT2 S3 - séquence : recommandation puis répudiation (EF-12/EF-14, CU-12/CU-14)
+' Protocole : recommendation.add et recommendation.repudiate
+autonumber
+
+actor "Utilisateur" as U
+participant "Client JavaFX" as CL
+participant "Serveur (C)\nboucle sockets" as SV
+participant "Worker métier" as WK
+participant "Blockchain" as BC
+database "PostgreSQL" as DB
+
+== Recommander une carte ==
+
+U -> CL : clique « Recommander »\nsur une carte visible
+CL -> SV : REQ recommendation.add  id=b7c1e2f3a4b5  payload { card_id=42 }
+SV -> WK : dispatch
+activate WK
+WK -> WK : valide (ENF-44/45)\n• la carte existe et est ACTIVE\n• pas de recommandation active existante
+WK -> WK : calcule le poids — 1.0 si auteur tiers,\n0.5 si créateur/propriétaire (jamais fourni par le client)
+alt déjà recommandée
+  WK --> SV : ERR 1004 RECOMMENDATION_DUPLICATE
+  SV --> CL : RES ERR
+  CL -> U : « Vous avez déjà recommandé cette carte »
+else acceptée
+  WK -> BC : mine → nouveau bloc (action = RECOMMANDATION)
+  BC --> WK : block_index=119
+  WK -> DB : INSERT blocks ; INSERT recommendations ; COMMIT
+  WK -> WK : recalcule la valeur active V(carte)\nΣ poids(recos actives) + 3 × victoires
+  WK --> SV : OK value_before=7.0, value_after=8.0, block_index=119
+  SV --> CL : RES OK
+  CL -> U : la valeur affichée est mise à jour
+  SV -> SV : EVT value.updated (card_id, avant/après, cause=RECOMMANDATION)
+  SV -> SV : EVT recommendation.changed (auteur + propriétaire)
+end
+deactivate WK
+
+== Répudier cette recommandation ==
+
+U -> CL : clique « Répudier »
+CL -> SV : REQ recommendation.repudiate  id=c8d2f3a4b5c6  payload { card_id=42 }
+SV -> WK : dispatch
+activate WK
+WK -> WK : valide — la recommandation existe\net est ACTIVE
+alt aucune recommandation active
+  WK --> SV : ERR 1005 RECOMMENDATION_NOT_FOUND
+  SV --> CL : RES ERR
+else acceptée
+  WK -> BC : mine → nouveau bloc (action = REPUDIATION)
+  BC --> WK : block_index=120
+  WK -> DB : INSERT blocks ;\nUPDATE recommendations SET state='REPUDIEE' ; COMMIT
+  note right of DB
+    L'historique est conservé :
+    la recommandation répudiée reste
+    dans la blockchain (§4.3).
+    Aucun bloc n'est supprimé.
+  end note
+  WK -> WK : recalcule V(carte) — le poids retiré,\nles recommandations répudiées ne comptent plus
+  WK --> SV : OK value_before=8.0, value_after=7.0, block_index=120
+  SV --> CL : RES OK
+  CL -> U : valeur mise à jour, historique conservé
+  SV -> SV : EVT value.updated + recommendation.changed
+  SV -> SV : la recommandation peut être redonnée plus tard :\nc'est une NOUVELLE transaction (deux blocs distincts)
+end
+deactivate WK
+@enduml

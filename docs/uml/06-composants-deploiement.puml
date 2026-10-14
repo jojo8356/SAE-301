@@ -1,0 +1,45 @@
+@startuml 06-composants-deploiement
+' AnimeTCG - SAÉ BUT2 S3 - composants et déploiement (phase 1)
+' Rappel : le canal applicatif est le socket, exclusivement.
+skinparam componentStyle rectangle
+
+package "Poste serveur (Debian)" {
+
+  component "Serveur AnimeTCG (C)" as SRV {
+    component "Couche réseau\n(sockets, acceptation,\ndiffusion)" as NET
+    component "Couche protocole\n(frames [len][JSON],\ndispatch des actions)" as PROTO
+    component "Couche métier\n(cartes, recos, battles,\ndroits, valeurs)" as BIZ
+    component "Couche blockchain\n(SHA-256, preuve de travail,\nvérification)" as CHAIN
+    component "Couche persistance\n(libpq)" as PERS
+  }
+
+  database "PostgreSQL\nblockchain_blocks,\ncard_events,\nbattle_votes,\ncard_state_current,\nusers" as DB
+
+  component "Worker de minage\n(thread dédié)" as MINE
+}
+
+package "Postes clients" {
+  component "Client AnimeTCG\n(Java + JavaFX)" as CLI {
+    component "Vues (MVC)" as VIEW
+    component "Contrôleurs" as CTRL
+    component "Modèle client" as MODEL
+    component "Service réseau\n(socket client)" as RSOCK
+  }
+  component "Client de test automatisé\n(outil, hors démonstration)" as BOT
+}
+
+NET --> PROTO : décodage des frames
+PROTO --> BIZ : route l'action validable
+BIZ --> CHAIN : inscrit une action validée
+CHAIN --> MINE : demande de preuve de travail
+CHAIN --> PERS : sauvegarde des blocs
+PERS --> DB : SQL paramétré
+RSOCK <--> NET : sockets TCP\nprotocole applicatif
+BOT <--> NET : sockets TCP\n(charge et cas d'erreur uniquement)
+
+note bottom of DB
+  Le serveur est l'UNIQUE composant
+  qui lit et écrit en base (ENF-05).
+  Aucun client n'y accède.
+end note
+@enduml

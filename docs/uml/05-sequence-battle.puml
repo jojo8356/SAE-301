@@ -1,0 +1,55 @@
+@startuml 05-sequence-battle
+' AnimeTCG - SAÉ BUT2 S3 - séquence : battle complète (CU-15 à CU-17)
+' Règles : proximité §4.5.1 (titre ou format), rangs voisins, vote 5 min DÉFINITIF (Q2.3/Q2.4),
+' quorum 3 hors créateur et propriétaires ; les votes des bots ne comptent pas dans le quorum (Q2.4, Q5.1).
+autonumber
+
+actor "Demandeur\n(propriétaire d'une carte)" as D
+participant "Client JavaFX" as CL
+participant "Serveur (C)" as SV
+participant "Worker métier" as WK
+participant "Blockchain" as BC
+actor "Votants connectés\n(clients humains)" as V
+
+D -> CL : sélectionne 2 cartes + demande de battle
+CL -> SV : DEMANDE battle(card_a, card_b)
+SV -> WK : traite la demande
+activate WK
+WK -> WK : vérifie statuts ACTIVE,\nproximité (titre ou format),\nrangs voisins,\npropriété du demandeur,\nabsence d'anti-abus
+
+alt demande refusée
+  WK --> SV : REFUS (motif précis)
+  SV --> CL : REFUS + message compréhensible
+  note right of SV : aucun bloc ajouté (CU-8)
+else battle acceptée
+  WK -> BC : inscription du bloc "battle ouverte"
+  BC --> WK : bloc miné (preuve de travail)
+  WK --> SV : battle_id + closes_at = +300 s (5 min)
+  SV --> CL : ACCEPTEE (battle_id, échéance)
+  SV -> V : événement "battle ouverte" (diffusion socket)
+  loop pendant 300 s (5 min)
+    V -> SV : VOTE(battle_id, card_id)
+    SV -> WK : enregistre le vote
+    alt second vote du même votant
+      WK --> SV : 1020 VOTE_ALREADY_CAST\n(le vote est définitif — Q2.4)
+    else premier vote
+      WK -> WK : exclut créateur et propriétaires,\n1 vote = 1 point ; les votes de bots\nne comptent pas dans le quorum
+    end
+  end
+  SV -> WK : clôture de la battle
+  alt quorum non atteint (< 3 votants hors créateur et propriétaires) OU aucun vote
+    WK -> BC : bloc "battle annulée"
+    WK --> SV : cartes rendues ACTIVE (cas 17 du §12.1)
+    SV -> V : événement battle.closed\noutcome = annulee_0_vote\nou quorum_non_atteint
+  else quorum atteint
+    WK -> WK : détermine la gagnante\n(votes ; égalité : la carte la\nplus ancienne — Q2.5)
+    WK -> BC : bloc "résultat de battle"\n(gagnante, perdante, transfert des recos)
+    WK -> WK : transfère les recommandations ACTIVES,\n+1 victoire à la gagnante (rang de rareté),\nperdante -> ARCHIVEE (plus affichée)\ndroits de la perdante INCHANGÉS (Q2.6)
+    WK -> WK : calcule les valeurs actives
+    WK --> SV : résultat
+    SV -> V : événement "battle terminée" + valeurs
+  end
+  deactivate WK
+  SV --> CL : résultat final à tous les clients concernés
+end
+@enduml

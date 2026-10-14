@@ -1,0 +1,271 @@
+@startuml 12-modele-relationnel
+' AnimeTCG - SAÉ BUT2 S3 - modèle relationnel PostgreSQL (DOC-07)
+' Deux familles de tables :
+'   1) la chaîne (blocks) = SOURCE DE VÉRITÉ, immuable, append-only ;
+'   2) les projections (cards, recommendations, ...) = miroir indexé,
+'      reconstruit (ou vérifié) à partir des blocs.
+' DDL complet : sql/schema.sql
+hide circle
+skinparam classAttributeIconSize 0
+
+class blocks <<souche — chaîne>> {
+  + block_index : BIGINT <<PK>>
+  --
+  timestamp : TIMESTAMPTZ
+  action_type : VARCHAR(32)
+  payload : JSONB
+  payload_canon : BYTEA NOT NULL
+  previous_hash : CHAR(64)
+  nonce : BIGINT
+  difficulty : SMALLINT
+  hash : CHAR(64) <<UNIQUE>>
+  --
+  CHECK (difficulty BETWEEN 3 AND 4)
+  CHECK (hash ~ '^[0-9a-f]{64}$')
+  CHECK (block_index = 0 OR previous_hash IS NOT NULL)
+}
+
+class users <<projection>> {
+  + user_id : SERIAL <<PK>>
+  --
+  pseudo : VARCHAR(32) <<UNIQUE>>
+  created_at : TIMESTAMPTZ
+  last_seen_at : TIMESTAMPTZ
+  last_block_index : BIGINT <<FK>>
+}
+
+class cards <<projection>> {
+  + card_id : SERIAL <<PK>>
+  --
+  title_romaji : VARCHAR(200) NOT NULL
+  title_english : VARCHAR(200)
+  title_native : VARCHAR(200)
+  format : VARCHAR(8) NOT NULL
+  studio : VARCHAR(100) NOT NULL
+  year : SMALLINT NOT NULL
+  season : VARCHAR(10)
+  episodes : SMALLINT NOT NULL
+  duration_min : SMALLINT
+  source : VARCHAR(12)
+  franchise : VARCHAR(100)
+  synopsis : VARCHAR(500)
+  rating : NUMERIC(3,1)
+  creator_id : INT <<FK>> NOT NULL
+  owner_id : INT <<FK>> NOT NULL
+  status : VARCHAR(10) NOT NULL
+  value_active : NUMERIC(8,2) DEFAULT 0
+  created_at : TIMESTAMPTZ
+  last_block_index : BIGINT <<FK>>
+  --
+  CHECK (episodes >= -1)
+  CHECK (year BETWEEN 1950 AND date_part('year', now())::int + 1)
+  CHECK (rating IS NULL OR rating BETWEEN 0 AND 10)
+  CHECK (status IN ('ACTIVE','EN_BATTLE','INACTIVE','ARCHIVEE'))
+  wins : SMALLINT DEFAULT 0
+  rarity_rank : VARCHAR(8) DEFAULT 'FER'
+  INDEX (owner_id, status)
+}
+
+class card_genres <<projection — 1FN>> {
+  + card_id : INT <<FK PK>>
+  + genre : VARCHAR(24) <<PK>>
+}
+
+class card_themes <<projection — 1FN>> {
+  + card_id : INT <<FK PK>>
+  + theme : VARCHAR(24) <<PK>>
+}
+
+class recommendations <<projection>> {
+  + recommendation_id : SERIAL <<PK>>
+  --
+  card_id : INT <<FK>>
+  user_id : INT <<FK>>
+  weight : NUMERIC(3,1) NOT NULL
+  state : VARCHAR(10) NOT NULL
+  block_index : BIGINT <<FK>>
+  created_at : TIMESTAMPTZ
+  --
+  CHECK (weight IN (0.5, 1.0))
+  CHECK (state IN ('ACTIVE','REPUDIEE'))
+  UNIQUE partiel (card_id, user_id) WHERE state = 'ACTIVE'
+}
+
+class battles <<projection>> {
+  + battle_id : SERIAL <<PK>>
+  --
+  card_a_id : INT <<FK>>
+  card_b_id : INT <<FK>>
+  opened_by : INT <<FK>>
+  state : VARCHAR(10) NOT NULL
+  opened_at : TIMESTAMPTZ
+  closes_at : TIMESTAMPTZ
+  winner_card_id : INT <<FK>>
+  outcome : VARCHAR(16)
+  last_block_index : BIGINT <<FK>>
+  --
+  CHECK (state IN ('OUVERTE','CLOSE'))
+  CHECK (outcome IS NULL OR outcome IN ('GAGNANTE_A','GAGNANTE_B','NULLE'))
+}
+
+class battle_votes <<projection>> {
+  + battle_id : INT <<FK PK>>
+  + user_id : INT <<FK PK>>
+  --
+  card_id : INT <<FK>>
+  block_index : BIGINT <<FK>>
+  cast_at : TIMESTAMPTZ
+}
+
+class legitimations <<projection>> {
+  + legitimation_id : SERIAL <<PK>>
+  --
+  card_id : INT <<FK>>
+  user_id : INT <<FK>>
+  justification : VARCHAR(200)
+  state : VARCHAR(12) NOT NULL
+  approvals : SMALLINT DEFAULT 0
+  created_at : TIMESTAMPTZ
+  closed_at : TIMESTAMPTZ
+  block_index : BIGINT <<FK>>
+  --
+  CHECK (state IN ('EN_COURS','ACCEPTEE','REJETEE','EXPIREE'))
+}
+
+class claims <<projection>> {
+  + claim_id : SERIAL <<PK>>
+  --
+  card_id : INT <<FK>>
+  claimant_id : INT <<FK>>
+  owner_id : INT <<FK>>
+  justification : VARCHAR(200)
+  state : VARCHAR(12) NOT NULL
+  decision_deadline : TIMESTAMPTZ
+  auto_transfer_at : TIMESTAMPTZ
+  created_at : TIMESTAMPTZ
+  decided_at : TIMESTAMPTZ
+  block_index : BIGINT <<FK>>
+  --
+  CHECK (state IN ('PROPOSEE','ACCEPTEE','REFUSEE','TRANSFEREE'))
+  UNIQUE partiel (card_id) WHERE state = 'PROPOSEE'
+  ' SANS_OBJET retire en v1.4 : les droits restent INCHANGES (Q2.6, 22/09/2026)
+}
+
+class authentications <<projection>> {
+  + authentication_id : SERIAL <<PK>>
+  --
+  card_id : INT <<FK cards>>
+  user_id : INT <<FK users>>          ' porteur légitime
+  legitimation_id : INT <<FK legitimations>>
+  justification : VARCHAR(200)
+  state : VARCHAR(10)                 ' ACTIVE | REVOQUEE
+  created_at : TIMESTAMPTZ
+  revoked_at : TIMESTAMPTZ
+  block_index : BIGINT <<FK blocks>>  ' bloc de l'authentification
+  revoked_block_index : BIGINT <<FK blocks>>  ' bloc de la révocation
+  --
+  UNIQUE (card_id) WHERE state = 'ACTIVE'
+  CHECK ((state = 'REVOQUEE') = (revoked_at IS NOT NULL))
+}
+
+users "1" -- "0..*" cards : crée / possède >
+cards "1" -- "1..*" card_genres : est taguée (≥ 1) >
+cards "1" -- "0..*" card_themes
+cards "1" -- "0..*" recommendations : reçoit >
+users "1" -- "0..*" recommendations : émet >
+cards "2" -- "0..*" battles : participe >
+battles "1" -- "0..*" battle_votes : reçoit >
+users "1" -- "0..*" battle_votes : exprime >
+cards "1" -- "0..*" legitimations : concerne >
+cards "1" -- "0..*" claims : concerne >
+users "1" -- "0..*" claims : revendique >
+blocks "1" -- "0..*" cards : justifie la dernière écriture >
+blocks "1" -- "0..*" recommendations
+blocks "1" -- "0..*" battles
+blocks "1" -- "0..*" claims
+
+note bottom of blocks
+  `payload_canon` conserve les octets exactement
+  hachés : sans eux, la vérification de chaîne est
+  impossible (JSONB réordonne les clés).
+  La chaîne est la SOURCE DE VÉRITÉ.
+  Aucune ligne n'est jamais modifiée ni supprimée :
+  attachement en fin de table uniquement (append-only).
+end note
+
+note right of claims
+  auto_transfer_at = created_at + 30 jours
+  (silence = accord, DEC-11).
+  Un refus explicite laisse la carte
+  au propriétaire : statu quo, sans recours.
+end note
+
+note top of cards
+  Toute écriture dans une projection se fait DANS LA MÊME
+  TRANSACTION que l'insertion du bloc correspondant :
+  jamais de bloc sans projection, jamais l'inverse.
+end note
+authentications }o--|| cards : certifie >
+authentications }o--|| users : emet >
+authentications }o--|| legitimations : autorise >
+authentications }|..|| blocks : inscrit >
+
+note right of authentications
+  Rétablie le 22/09/2026 (CU-20, DEC-24).
+  Une seule ligne ACTIVE par carte :
+  la nouvelle authentification remplace
+  l'ancienne, qui reste dans l'historique.
+  Aucun effet sur la valeur des cartes.
+end note
+class legitimation_likes <<projection — Q4.1>> {
+  + legitimation_id : INT <<FK PK>>
+  + user_id : INT <<FK PK>>
+  + liked_at : TIMESTAMPTZ
+  + block_index : BIGINT <<FK>>
+}
+class friendships <<hors chaîne — réglage utilisateur>> {
+  + user_id : INT <<FK PK>>
+  + friend_id : INT <<FK PK>>
+  + created_at : TIMESTAMPTZ
+  --
+  CHECK (user_id <> friend_id)
+}
+class shares <<projection — inscrit en chaîne>> {
+  + share_id : SERIAL <<PK>>
+  + card_id : INT <<FK>>
+  + from_user_id : INT <<FK>>
+  + to_user_id : INT <<FK>>
+  + state : ENVOYE | ACCEPTE | REFUSE
+  + created_at : TIMESTAMPTZ
+  + decided_at : TIMESTAMPTZ
+  --
+  INDEX UNIQUE (card_id, to_user_id)\noù state = 'ENVOYE'
+}
+
+legitimation_likes }o--|| legitimations : like >
+legitimation_likes }o--|| users : emet >
+legitimation_likes }|..|| blocks : inscrit >
+friendships }o--|| users : lie >
+shares }o--|| cards : porte >
+shares }o--|| users : emet >
+shares }o--|| users : recoit >
+
+note right of shares
+  Retenu le 22/09/2026 (réponse Q5.2).
+  Acceptation : le DEMANDEUR se déplace.
+  Refus : personne ne bouge.
+  ✅ INSCRIT EN BLOCKCHAIN (option A du
+  22/09/2026) : envoi et acceptation
+  produisent chacune un bloc.
+  La liste d'amis reste un reglage
+  hors chaine (aucune carte ne bouge).
+end note
+
+note bottom of legitimation_likes
+  Le porteur légitime est le candidat
+  qui totalise LE PLUS de likes (Q4.1) ;
+  il perd le titre dès qu'un autre le dépasse.
+  Le scrutin de 60 s a disparu : 1013
+  LEGITIMATION_CLOSED n'est plus émis.
+end note
+@enduml

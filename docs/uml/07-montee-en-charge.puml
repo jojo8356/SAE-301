@@ -1,0 +1,63 @@
+@startuml 07-montee-en-charge
+' AnimeTCG - SAÉ BUT2 S3 - passage à l'échelle : trois paliers d'architecture
+' Annexe E du cahier des charges (document de perspective, hors périmètre ferme)
+skinparam componentStyle rectangle
+skinparam noteFontSize 11
+
+package "PALIER 1 — État actuel du projet (100 clients, 4 en démonstration)" as P1 {
+  component "Serveur AnimeTCG (C)\nprocessus unique\nboucle d'événements epoll\n(sockets BSD à la main)\nminage dans un worker" as S1
+  database "PostgreSQL\n(sauvegarde de la blockchain)" as DB1
+  component "Clients JavaFX" as C1
+  S1 --> DB1 : libpq
+  C1 --> S1 : sockets TCP
+  note bottom of S1
+    Aucun goulot d'étranglement atteint.
+    Au-delà de 100 connectés, le serveur met les
+    nouveaux clients en FILE D'ATTENTE (ENF-54) :
+    position affichée, admission automatique.
+    Limite théorique immédiate : ~1 000 connexions
+    (soft limit des descripteurs de fichiers).
+  end note
+}
+
+package "PALIER 2 — Ordre de 10 000 clients (C10K)" as P2 {
+  component "N workers du serveur\nSO_REUSEPORT\n(1 socket d'écoute par worker)" as S2
+  component "Chargeur de répartition\n(reverse proxy ou LB L4)" as LB2
+  database "PostgreSQL\n+ pool de connexions (PgBouncer)" as DB2
+  database "Répliques de lecture" as DB2R
+  component "Backplane pub/sub\n(diffusion d'événements)" as BUS2
+  component "Clients" as C2
+  C2 --> LB2
+  LB2 --> S2
+  S2 --> DB2
+  DB2 --> DB2R : réplication
+  S2 <--> BUS2
+  note bottom of S2
+    Leviers : epoll multi-thread (SO_REUSEPORT),
+    protocole binaire, backpressure,
+    réglages noyau (nofile, somaxconn).
+    Chaque socket devient une donnée d'état :
+    la répartition doit être « connection-aware ».
+  end note
+}
+
+package "PALIER 3 — Ordre de 1 000 000 de clients (hors sujet pour la SAÉ)" as P3 {
+  component "Fermes de workers\n(répartition par shard)" as S3
+  component "Backplane distribué" as BUS3
+  database "Base partitionnée\n+ réplicas par région" as DB3
+  component "Snapshots + compaction\nde la blockchain" as SNAP3
+  component "Clients" as C3
+  C3 --> S3
+  S3 <--> BUS3
+  S3 --> DB3
+  S3 --> SNAP3
+  note bottom of SNAP3
+    Le vrai défi n'est plus le réseau :
+    c'est la croissance de l'état.
+    La chaîne ne se compacte jamais seule.
+    Pour comparaison : Phoenix a démontré
+    2 millions de connexions WebSocket,
+    WhatsApp jusqu'à 2,8 M par serveur.
+  end note
+}
+@enduml
