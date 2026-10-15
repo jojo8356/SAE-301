@@ -1,13 +1,12 @@
 -- ============================================================================
 --  AnimeTCG — SAÉ BUT2 S3 — schéma PostgreSQL (DOC-07)
---  Version : 1.5 — 22/09/2026 — phase 1
+--  Version : 1.6 — 14/10/2026 — phase 1
 --  (1.1 : charge utile canonique `payload_canon` ; 1.2 : table `authentications`,
---   rétablie par le sujet officiel 2026-2027 — CU-20, DEC-24 ; 1.3 : état
---   colonne `revoked_block_index` (le bloc de la révocation n'écrase pas celui de
---   l'authentification) — §4.7.3 ; 1.4 : réponses de l'équipe au questionnaire —
---   état `ARCHIVEE` (défaite en battle), vote DÉFINITIF, légitimation par likes,
---   liste d'amis et partage ciblé, limite de cartes actives portée à 100 ; 1.5 : le
---   partage est INSCRIT EN BLOCKCHAIN (option A) — colonne `shares.block_index`)
+--   rétablie par le sujet officiel 2026-2027 — CU-20, DEC-24 ; 1.3 : colonne
+--   `revoked_block_index` ; 1.4 : réponses de l'équipe au questionnaire — état
+--   `ARCHIVEE`, vote définitif, légitimation par likes, amis et partages, limite
+--   de cartes actives à 100 ; 1.5 : partage inscrit en blockchain ; 1.6 : borne
+--   `block_index <= UINT32_MAX`, cohérente avec l'en-tête binaire version 1.)
 --
 --  PRINCIPES
 --   1. `blocks` est la SOURCE DE VÉRITÉ : table append-only, jamais modifiée,
@@ -51,6 +50,7 @@ CREATE TABLE IF NOT EXISTS blocks (
     hash            CHAR(64)     NOT NULL,
 
     -- Le hash est un SHA-256 encodé en 64 caractères hexadécimaux minuscules.
+    CONSTRAINT blocks_index_range   CHECK (block_index BETWEEN 0 AND 4294967295), -- header v1 encodes uint32
     CONSTRAINT blocks_hash_hex       CHECK (hash ~ '^[0-9a-f]{64}$'),
     CONSTRAINT blocks_prev_hash_hex  CHECK (previous_hash IS NULL OR previous_hash ~ '^[0-9a-f]{64}$'),
     -- Bornes du calibrage automatique (§5.2.1) : le serveur ne choisit que 3 ou 4.
