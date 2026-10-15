@@ -4,10 +4,10 @@
 |---|---|
 | **Projet** | **AnimeTCG** — plateforme cliente-serveur de cartes d'anime : création, recommandation, battles, chaîne de blocs |
 | **Document** | **DOC-09** — spécification technique (exigé par le sujet ; phase 1, enrichi jusqu'en phase 3) |
-| **Version** | **0.7** — 22/09/2026 (0.7 : **valeurs définitives + minage 0,3–2 s** ; 0.6 : plus d'encadrant, décisions d'équipe ; 0.5 : réponses du questionnaire ; 0.4 : authentification et bibliothèques ; 0.3 : note de format ; 0.2 : sujets techniques ; 0.1 : 19/09/2026) |
+| **Version** | **0.9** — 14/10/2026 (0.9 : logger C maison implémenté, fiche F-LOG-01, guide d'intégration, décision ADR-15 et alignement du format/catalogue ; 0.8 : noyau crypto C, guide d’intégration sockets/libpq, correction du vecteur RFC 8785 et clarification des contrôles de projections ; 0.7 : valeurs définitives + minage 0,3–2 s ; 0.6 : décisions d'équipe ; 0.5 : questionnaire ; 0.4 : authentification et bibliothèques ; 0.3 : note de format ; 0.2 : sujets techniques ; 0.1 : 19/09/2026) |
 | **Auteurs** | Équipe SAÉ BUT2 S3 — M1 (réseau & protocole), M2 (chaîne & métier), M3 (persistance & données), M4 (client & IHM) |
-| **Cahier des charges de référence** | `cahier-des-charges-sae-s3.md` **v0.24** (22/09/2026) |
-| **Documents liés** | `docs/note-format-ligne.md` (**v1.3**, forme des journaux) · `docs/protocole-applicatif.md` (**v1.2**) · `docs/uml/` (**14 diagrammes + 28 exports**) · `sql/schema.sql` **v1.5** (**DOC-07**) · `questionnaire-decisions.md` · `questions-a-repondre.md` (décisions finales) · `checklist-phase1-10-10.md` |
+| **Cahier des charges de référence** | `cahier-des-charges-sae-s3.md` **v0.25** (14/10/2026) |
+| **Documents liés** | `docs/fiche-fonctionnalite-cryptographie.md` (F-CRYPTO-01) · `docs/guide-integration-crypto-c.md` (GUIDE-CRYPTO-01) · `docs/fiche-fonctionnalite-logger-c.md` (F-LOG-01) · `docs/guide-integration-logger-c.md` (GUIDE-LOG-01) · `docs/note-format-ligne.md` (**v1.4**, format et catalogue) · `docs/protocole-applicatif.md` (**v1.2**) · `docs/uml/` (**14 diagrammes + 28 exports**) · `sql/schema.sql` **v1.6** (**DOC-07**) · `questionnaire-decisions.md` · `questions-a-repondre.md` (décisions finales) · `checklist-phase1-10-10.md` |
 | **Statut** | **Document vivant** : complété à chaque phase, figé pour le tag `phase3`. Les sections marquées 🔧 sont rédigées mais pas encore implémentées ; ✅ = conforme au code livré |
 
 > **Comment ce document est construit.** Il suit la structure de vues recommandée par la norme **IEEE 1016-2009** (*Software Design Description*) et le cadre de description d'architecture **ISO/IEC/IEEE 42010** : plutôt qu'un récit, une série de **points de vue** (contexte, composition, logique, information, interface, processus, déploiement), chacun répondant aux préoccupations d'un lecteur précis. C'est la façon de faire des grandes équipes : un lecteur qui cherche « où est la règle des 10 cartes ? » ne lit pas 60 pages, il va à la bonne vue.
@@ -111,7 +111,7 @@ Le projet n'est pas certifié (ce n'est pas l'objet d'une SAÉ), mais **chaque c
 | **Clients AnimeTCG** (Java) | Composant du système | Jusqu'à 100 simultanés, au-delà : file d'attente | Un client lent **ne doit jamais** ralentir le serveur (§11.6) |
 | **PostgreSQL local** | Système externe (SGBD) | Persistance de la chaîne et des projections | Défaillance = service dégradé, **pas** arrêt du serveur (§8.4) |
 | **Système de journaux** (fichiers, `journald`/`rsyslog`) | Système externe (exploitation) | Reçoit les lignes des deux composants | **Ne transporte aucune donnée métier** (§10.9) |
-| **Bibliothèques** (zlog, jansson, libpq, SLF4J/Logback, JavaFX — **sans libuv, écartée le 22/09/2026**) | Dépendances | Liées au code | Licences et compatibilité en **§12.5** |
+| **Bibliothèques** (logger C maison, jansson, libpq, SLF4J/Logback, JavaFX — **sans libuv, écartée le 22/09/2026**) | Dépendances | Liées au code | Licences et compatibilité en **§12.5** |
 
 **Aucun service distant n'est appelé** : la plateforme fonctionne hors ligne, sur le réseau local de la salle. C'est une contrainte du sujet (et une bonne nouvelle : pas de dépendance à un tiers le jour de la démonstration).
 
@@ -271,18 +271,22 @@ sae-301/
 │   │   ├── chain_api.h            # interface possédée par business (mine/verify)
 │   │   └── store_api.h            # interface possédée par business (append/load)
 │   ├── chain/
-│   │   ├── sha256.c/.h            # implémentation conforme FIPS 180-4
-│   │   ├── header.c/.h            # en-tête canonique 96 octets (ENF-52) — §6.5
-│   │   ├── pow.c/.h               # minage, nonce 64 bits, budget d'essais (§8.9)
+│   │   ├── crypto.h               # API publique et types du noyau de chaîne
+│   │   ├── crypto_internal.h      # helpers privés de codage et validation
+│   │   ├── crypto.c               # correspondance des statuts vers des messages
+│   │   ├── sha256.c               # façade SHA-256 OpenSSL (FIPS 180-4)
+│   │   ├── header.c               # en-tête canonique 96 octets (ENF-52) — §6.5
+│   │   ├── pow.c                  # minage, nonce 64 bits, budget d'essais (§8.9)
 │   │   ├── calibrate.c/.h         # banc de mesure + décision de difficulté (§8.6-8.8)
-│   │   └── verify.c/.h            # vérification par bloc, sa propre difficulté
+│   │   └── verify.c               # vérification par bloc et par chaîne
 │   ├── persistence/
 │   │   ├── db.c/.h                # libpq : connexion, requêtes paramétrées (ENF-46)
 │   │   ├── blocks.c/.h            # append bloc + projection en UNE transaction
 │   │   ├── projections.c/.h       # lectures indexées (cards, recos, battles, claims)
 │   │   └── restore.c/.h           # reconstruction du contexte (REC-02 ≤ 10 s)
 │   └── util/
-│       ├── log.c/.h               # façade zlog (repli rxi/log.c) — §10
+│       ├── log.c/.h               # logger C maison asynchrone, file bornée — §10
+│       ├── log_events.c/.h         # catalogue fermé, synchronisé avec la note de format
 │       ├── sanitize.c/.h          # anti-injection de journal (CWE-117) — §10.6
 │       ├── clock.c/.h             # UTC + monotone (§6.4)
 │       └── ring.c/.h              # files bornées réutilisables (admission, journal)
@@ -301,8 +305,8 @@ sae-301/
 │   ├── logs/          → 10 tests de journalisation du §10.12 (REC-17)
 │   └── client_de_test/  # le « bot » de charge est ICI, pas à la racine (DEC-14)
 ├── sql/               # schema.sql (DOC-07, v1.5) + restauration
-├── scripts/           # logs.sh, logs-purge.sh, check-layers.sh, backup.sh, restore.sh
-├── third_party/       # sources des libs vendues (repli rxi/log.c), THIRD-PARTY.md
+├── scripts/           # logs-purge.sh livré ; autres utilitaires (logs.sh, check-layers, backup/restore) prévus
+├── third_party/       # dépendances vendues éventuelles ; aucune bibliothèque de journalisation C
 └── docs/              # cahier des charges, protocole, spec technique, UML, exports
 ```
 
@@ -313,9 +317,9 @@ sae-301/
 | `protocol/frame.h` | `frame_read`, `frame_write`, `FRAME_MAX_BYTES` | une structure d'action métier |
 | `protocol/actions.h` | `actions_dispatch(msg, out)` — un seul point d'entrée | les détails des règles |
 | `business/*.h` | des fonctions pures `*_validate`, `*_apply` | `libpq`, `sys/socket.h` |
-| `chain/header.h` | `header_build(...) → 96 octets` | `block_t` de la base |
+| `chain/crypto.h` | API de hachage, en-tête, minage et vérification | `block_t` de la base et types du protocole |
 | `persistence/db.h` | `db_open`, `db_append_block`, `db_load_context` | un type JSON du protocole |
-| `util/log.h` | `log_init`, `log_close`, `log_set_context` | zlog directement |
+| `server/util/log.h` | `animetcg_log_init`, `animetcg_log_emit`, contexte TLS, stats, flush et shutdown | moteur tiers, `printf` de diagnostic |
 
 ### 4.6. Faire respecter la règle — contrôle automatique et métriques
 
@@ -377,10 +381,14 @@ Trois propriétés visées, toutes vérifiables : **aucun cycle** entre couches 
 ### 5.2. Contrats des modules serveur (extraits normatifs)
 
 ```c
-/* ---------- util/log.h — journalisation (voir §10) ---------- */
-void log_init(const char *conf_path);        /* charge zlog.conf ; valide via zlog-chk-conf */
-void log_close(void);
-void log_set_context(long client_id, const char *request_id); /* MDC : c= et r= */
+/* ---------- server/util/log.h — logger maison (voir §10) ---------- */
+animetcg_log_status_t animetcg_log_init(const animetcg_log_config_t *config);
+animetcg_log_status_t animetcg_log_emit(animetcg_log_event_t event,
+                                         const animetcg_log_field_t *fields,
+                                         size_t field_count);
+animetcg_log_status_t animetcg_log_set_context(uint32_t client_id,
+                                               const char *request_id);
+animetcg_log_status_t animetcg_log_shutdown(void);
 
 /* ---------- util/clock.h — horloges (§6.4) ---------- */
 int64_t now_utc_ms(void);      /* horodatage des journaux : ISO 8601 UTC, milliseconde */
@@ -431,7 +439,7 @@ int db_load_context(long user_id, ctx_out_t *out);      /* REC-02 : ≤ 10 s pou
 - `JSON_MAX_DEPTH 32` **côté application**, doublé de `JSON_PARSER_MAX_DEPTH 32` **dans la configuration de la bibliothèque** : ceinture et bretelles contre CWE-674.
 - Les nombres sont lus **comme entiers ou décimaux selon le champ**, jamais « au mieux » : pas de conversion silencieuse (RFC 8259 : pas de `NaN`, pas d'`Infinity`, pas de clé dupliquée).
 - UTF-8 **valide exigé** (RFC 8259) ; une séquence invalide fait échouer le décodage avec `-32700`, jamais un remplacement silencieux.
-- Le **repli cJSON** est documenté comme l'est `rxi/log.c` pour la journalisation : même esprit — un plan B écrit, pas improvisé le jour où l'installation pose problème.
+- Le **repli cJSON** est documenté comme tout choix de dépendance : un plan B explicite, non improvisé le jour où l'installation pose problème. Le logger C ne dépend d'aucun moteur externe.
 
 #### 5.3.1. Bibliothèque de hachage — **OpenSSL** (et non une implémentation maison)
 
@@ -441,7 +449,7 @@ Le sujet officiel 2026-2027 (§10) **autorise nommément OpenSSL** pour le hacha
 |---|---|---|
 | `chain/sha256.c` : implémentation complète écrite par l'équipe (conformité FIPS 180-4 vérifiée par vecteurs dorés) | **`chain/sha256.c` devient une façade de ≈ 30 lignes** autour de `SHA256()` d'OpenSSL, conservant exactement la même signature publique | ① Le sujet **autorise** OpenSSL et **n'autorise que lui** dans cette catégorie : réécrire SHA-256 n'apporte plus aucun point ; ② l'implémentation OpenSSL est **accélérée matériellement** (SHA-NI ≈ 1,8 cycle/octet) — le banc de calibrage du §8.6 mesurera donc le débit réel de la machine ; ③ un code cryptographique de moins à maintenir et à défendre en soutenance |
 
-**Ce qui ne change pas** : les **vecteurs dorés du §6.5.5** restent valables (même algorithme, même sortie), l'**en-tête canonique de 96 octets** ne bouge pas, et la **preuve de travail** est vérifiée par bloc contre sa propre difficulté (ENF-52). La valeur ajoutée de l'équipe se déplace du **calcul** vers la **sérialisation canonique** — c'est là que le jury attend l'argument.
+**Ce qui ne change pas** : les vecteurs SHA-256 normalisés (message vide et `abc`) restent valables ; l'en-tête canonique de 96 octets ne bouge pas, et la preuve de travail est vérifiée par bloc contre sa propre difficulté (ENF-52). Le vecteur complet du bloc a été recalculé en v0.8, car l'ancien exemple de payload n'ordonnait pas ses propriétés selon RFC 8785. La valeur ajoutée de l'équipe se déplace du calcul vers la sérialisation canonique — c'est là que le jury attend l'argument.
 
 > **En une phrase pour la soutenance** : « OpenSSL calcule le SHA-256 ; ce que nous avons dû concevoir, c'est **ce qu'on lui donne à hacher** — un en-tête canonique de 96 octets et une charge utile canonique RFC 8785 (§6.5). »
 
@@ -449,7 +457,7 @@ Le sujet officiel 2026-2027 (§10) **autorise nommément OpenSSL** pour le hacha
 
 Le sujet (§10) impose une **liste blanche** de bibliothèques — OpenSSL, libpq, POSIX, JavaFX, JUnit — et prévoit une **demande** pour toute autre. **Cette demande n'a plus de destinataire** : depuis le **22/09/2026**, l'équipe n'a plus d'encadrant et **décide seule** — le **sujet écrit** reste la seule autorité. L'équipe **retient** les trois dépendances hors liste nécessaires et **assume la décision**, en produisant la **déclaration** ci-dessous — nom, usage, statut, licence (§12.5) et **repli**. C'est ce tableau qui sera vérifié en revue, pas une autorisation.
 
-> ⚠️ **Point d'attention pour le jury** : la liste blanche du §10 n'est pas respectée à la lettre pour **jansson**, **zlog/SLF4J-Logback** et **gcovr/JaCoCo**. Le choix est **assumé et documenté** : chacune a un **repli prêt** (colonne de droite) et une **façade** qui isole l'appel (`json_io.c`, `log.c`, cibles du `Makefile`), de sorte qu'une bascule coûte une zone de code, jamais une réécriture.
+> ⚠️ **Point d'attention pour le jury** : la liste blanche du §10 n'est pas respectée à la lettre pour **jansson**, **SLF4J/Logback côté Java** et les outils de couverture **gcovr/JaCoCo**. Ces choix sont assumés et déclarés. Le serveur C utilise désormais un logger maison, qui n'ajoute aucune dépendance de journalisation. Les façades `json_io.c` et `server/util/log.h` isolent les API concernées.
 
 | Dépendance | Usage | Statut | Repli si le besoin change |
 |---|---|---|---|
@@ -458,7 +466,8 @@ Le sujet (§10) impose une **liste blanche** de bibliothèques — OpenSSL, libp
 | **POSIX** (`pthread`, sockets, `time.h`) | fils, réseau, horloge | ✅ autorisées | — |
 | **JavaFX / JUnit** | IHM, tests Java | ✅ autorisées | — |
 | **jansson** | décodage JSON (C) | ✅ **retenue** — décision d'équipe du 22/09/2026, déclarée | analyseur JSON restreint maison (≈ 300 lignes, format borné) — `json_io.c` isole déjà l'accès |
-| **zlog** (C), **SLF4J + Logback** (Java) | journalisation | ✅ **retenues** — décision d'équipe du 22/09/2026, déclarées | `rxi/log.c` (2 fichiers, embarqués) et `java.util.logging` — **le format de ligne ne change pas** (`docs/note-format-ligne.md`) |
+| **Logger maison** (`server/util/`, C11/POSIX/pthreads) | journalisation serveur | ✅ **implémenté**, aucun moteur C tiers ni repli `rxi/log.c` | N/A — API métier découplée derrière `server/util/log.h`; la note de format reste commune |
+| **SLF4J + Logback** (Java) | journalisation client | ✅ retenus et déclarés — choix d'équipe du 22/09/2026 | `java.util.logging` si l'équipe retire la dépendance ; le format de ligne ne change pas |
 | **gcov / gcovr / JaCoCo** | couverture (phase 3) | ✅ **retenus** — décision d'équipe du 22/09/2026 ; `gcov` est fourni avec GCC | comptage manuel des cas couverts (le sujet rappelle qu'**aucun framework de tests C n'est installé**) |
 
 **Pourquoi la façade reste utile même sans autorisation à demander** : l'isolation de ces trois dépendances (`json_io.c`, `log.c`, cibles du `Makefile`) n'est plus une précaution réglementaire, c'est une **règle d'architecture** — remplacer un analyseur JSON, un moteur de journalisation ou un outil de couverture doit coûter **un fichier**, jamais une reprise du métier. C'est l'application directe de la règle de dépendance du §4.4 et l'un des exemples cités au §13.0 (inversion de dépendance).
@@ -561,6 +570,8 @@ Le hash d'un bloc porte sur un **en-tête de taille fixe**, sérialisé en **gro
 | 64 | 32 o | `payload_hash` | 32 octets bruts | `SHA-256` de la charge utile **canonique** |
 | **Total** | **96 o** | | | **`hash_bloc = SHA-256(en-tête de 96 octets)`** |
 
+> **Alignement avec PostgreSQL.** Le contrat binaire version 1 réserve 32 bits non signés à `block_index`, alors que `sql/schema.sql` stocke cet index en `BIGINT`. Le schéma doit donc borner les valeurs à `0..4 294 967 295` ; le type plus large sert aux jointures et ne permet pas d'étendre silencieusement l'en-tête. Une évolution au-delà de cette borne exige une nouvelle version d'en-tête et de nouveaux vecteurs dorés.
+
 **Ce que cette structure garantit :**
 
 1. **La difficulté est hachée** (ENF-52) : la passer de 4 à 3 invalide le bloc. La preuve de travail est ensuite vérifiée **contre la difficulté inscrite dans le bloc**, jamais contre une difficulté « courante » (ENF-16).
@@ -583,17 +594,18 @@ La base stocke la charge utile **deux fois**, et ce n'est pas un doublon :
 charge utile reçue (JSON de la trame)
    │
    ├─ ① validation de forme (§7.4)      → types, bornes, listes fermées
-   ├─ ② canonicalisation NFC des chaînes de caractères
+   ├─ ② normalisation métier éventuelle → notamment NFC si la règle du protocole
+   │                                       l'impose, avant de figer l'action
    ├─ ③ sérialisation canonique JSON     → RFC 8785 « JCS » :
-   │        clés triées, aucun espace, nombres sans notation scientifique,
-   │        caractères de contrôle échappés
+   │        clés triées, aucun espace, nombres au format ECMAScript,
+   │        caractères de contrôle échappés ; aucune normalisation Unicode
    ├─ ④ payload_canon = ces octets       → envoyés à PostgreSQL ET hachés
    └─ ⑤ payload (JSONB)                  → la même donnée, pour l'interrogation
 ```
 
-**Le choix de la référence** : plutôt qu'une canonicalisation « maison » (trier les clés à la main — la façon dont on découvre six mois plus tard que deux implémentations diffèrent sur un nombre flottant), on s'appuie sur le **JSON Canonicalization Scheme de la RFC 8785** : ordre des clés par unités de code UTF-16, nombres au format IEEE 754 sans zéros superflus, aucun espace insignifiant, échappement fixé pour les caractères de contrôle. C'est la forme canonique utilisée pour les signatures et les hachages de transactions — exactement notre cas d'usage.
+**Le choix de la référence** : plutôt qu'une canonicalisation « maison » (trier les clés à la main — la façon dont on découvre six mois plus tard que deux implémentations diffèrent sur un nombre flottant), on s'appuie sur le **JSON Canonicalization Scheme de la RFC 8785** : ordre des clés par unités de code UTF-16, nombres au format IEEE 754 selon la sérialisation ECMAScript, aucun espace insignifiant, échappement fixé pour les caractères de contrôle. **JCS ne normalise pas Unicode** : les chaînes sont sérialisées telles quelles. Si la validation métier/protocole applique NFC, elle le fait une fois, avant de figer la charge utile ; la canonicalisation conserve ensuite exactement ces points de code. C'est la forme canonique utilisée pour les signatures et les hachages de transactions — exactement notre cas d'usage.
 
-> ⚠️ **Robustesse** : la bibliothèque JSON (`jansson`, §5.3) ne fait pas JCS à elle seule. La canonicalisation est donc une **fonction dédiée** (`chain/header.c` → `payload_canonicalize()`), testée par des vecteurs (§6.5.5), et **appliquée en un seul endroit** : aucune autre couche ne produit d'octets hachables.
+> ⚠️ **Robustesse et état d'implémentation** : la bibliothèque JSON (`jansson`, §5.3) ne fait pas JCS à elle seule. Le sérialiseur JCS reste une responsabilité distincte de la couche de décodage. Le noyau `server/chain/` ajouté au dépôt ne parse ni ne normalise le JSON : il accepte uniquement les octets déjà canonisés, en vérifie les bornes, puis les hache. L'intégration du serveur doit donc fournir `payload_canonicalize()` conforme aux règles ci-dessus et conserver exactement les octets produits dans `payload_canon`.
 
 #### 6.5.5. Algorithme de vérification (ENF-47, REC-07, REC-16)
 
@@ -616,15 +628,16 @@ vérifier_chaîne(blocs triés par block_index):
     return CHAÎNE VALIDE
 ```
 
-**Les trois falsifications détectées, et le test qui les démontre** (REC-16, phase 2) :
+**Les falsifications détectées par la vérification cryptographique, et le contrôle séparé des projections** (REC-16, phase 2) :
 
 | Cas | Ce que fait le test | Détection | Message |
 |---|---|---|---|
-| **1 — Donnée métier altérée** | `UPDATE cards SET value_active = 999` puis vérification | La projection ne correspond plus au bloc ; et si l'on modifie le `payload_canon`, le hash ne se recalcule pas | `hash recalculé différent` |
+| **1 — Octets d'un bloc altérés** | Modifier `payload_canon`, `nonce` ou un autre champ engagé dans l'en-tête, puis vérifier | Le hash recalculé diffère du hash stocké | `hash recalculé différent` |
+| **Projection métier altérée** | `UPDATE cards SET value_active = 999` puis vérifier | **Non détecté par `crypto_verify_chain` seul** : la projection n'est pas dans les blocs et `value_active` est dérivée. Il faut un contrôle distinct qui rejoue/reconstruit les projections depuis la chaîne (contrôle décrit en annexe C du schéma SQL) | Hors contrôle cryptographique de la chaîne |
 | **2 — Difficulté falsifiée (4 → 3)** | `UPDATE blocks SET difficulty = 3 WHERE block_index = 54` | L'en-tête reconstruit diffère → hash différent **du bloc 54**, puis `prev_hash` différent **au bloc 55** | Double détection : locale **et** en cascade |
 | **3 — Preuve de travail trafiquée** | `UPDATE blocks SET hash = '0000…'` (fabriqué) | La difficulté annoncée n'est pas satisfaite par le hash stocké | `preuve de travail insuffisante` |
 
-> **Pourquoi le cas 2 est le plus important** : c'est *exactement* l'attaque que la version naïve du projet laisserait passer. Si la difficulté n'était pas hachée, un utilisateur pourrait **abaisser la difficulté d'un bloc** dans la base sans que rien ne le signale — la chaîne resterait « cohérente » du point de vue des hash. C'est le scénario que l'encadrant cherchera, et c'est celui que le test de la phase 2 démontre.
+> **Pourquoi l'altération de difficulté est importante** : c'est *exactement* l'attaque que la version naïve du projet laisserait passer. Si la difficulté n'était pas hachée, un utilisateur pourrait **l'abaisser dans la base** sans que le hash du bloc ne change — la preuve de travail serait alors évaluée contre une cible affaiblie. C'est le scénario que le test de la phase 2 doit démontrer.
 
 #### 6.5.6. Vecteurs de test dorés (*golden vectors*)
 
@@ -649,16 +662,16 @@ Un vecteur doré est une entrée fixe dont la sortie attendue est écrite **dans
 | `prev_hash` | 32 octets nuls (chaîne de test) |
 | `action_id` | 1 (création de carte) |
 | `difficulty` | 3 |
-| `payload_canon` | `{"title_romaji":"Cowboy Bebop","episodes":26,"year":1998}` |
-| `payload_hash` | `a08c199cc73fd5ad0bb3d7eed343355760d7e587779906311da15671f24557f0` |
-| **nonce trouvé** | **13 423** (13 424 tentatives) |
-| **`hash` attendu** | `00045bb88bc02a0900cc54b43ef408d9fadb6fc586ee6fac7e4efce715014f36` |
+| `payload_canon` | `{"episodes":26,"title_romaji":"Cowboy Bebop","year":1998}` (clés triées conformément à RFC 8785) |
+| `payload_hash` | `a79a3d87a822afbd43f4191ae858bf03525779cc2f092362ec83953e3a792a23` |
+| **nonce trouvé** | **1 484** (1 485 tentatives) |
+| **`hash` attendu** | `000e857b87a46fb7617d396f1a60c941e09318da4ba5ea9d3c37ac64e30daf54` |
 
 L'en-tête correspondant, en hexadécimal (96 octets) :
 
 ```
 00000001 00000076 000001a0c03b8d54 0000…0000 00000001 00000003
-000000000000346f a08c199cc73fd5ad0bb3d7eed343355760d7e587779906311da15671f24557f0
+00000000000005cc a79a3d87a822afbd43f4191ae858bf03525779cc2f092362ec83953e3a792a23
 ```
 
 Ce vecteur est **reproductible** : il a été calculé avec le format décrit ci-dessus, et il tient en trois lignes de test. Il vérifie d'un coup la sérialisation, l'implémentation du hash, la boucle de minage **et** la règle des zéros hexadécimaux de tête.
@@ -732,10 +745,10 @@ Le protocole applicatif est **spécifié séparément** : `docs/protocole-applic
 
 | Situation | Ce que voit l'utilisateur | Ce qui part au journal |
 |---|---|---|
-| Refus métier (`1001 CARD_LIMIT_REACHED`) | « Vous avez déjà 100 cartes actives — désactivez-en une pour continuer. » | `WARN … métier refusé \| code=1001 card_id=- user=7` |
-| Erreur interne | « Une erreur interne est survenue. Réessayez. » **+ identifiant de demande affiché** | `ERROR … exception inattendue \| r=ab12f3 module=persistence` |
-| Serveur saturé | « Le serveur est momentanément chargé, nouvelle tentative automatique. » | `WARN … saturation \| in_flight=8 action=card.create` |
-| En attente d'admission | « En attente — position 3 sur 12 » | `INFO … file admission \| position=3 depth=12` |
+| Refus métier (`1001 CARD_LIMIT_REACHED`) | « Vous avez déjà 100 cartes actives — désactivez-en une pour continuer. » | `WARN … r=ab12f3c4d5e6 \| business \| rule refused \| code=1001 reason=card_limit` |
+| Erreur interne liée à une écriture PostgreSQL | « Une erreur interne est survenue. Réessayez. » **+ identifiant de demande affiché** | `ERROR … r=ab12f3c4d5e6 \| persistence \| db write failed \| op=block.commit` |
+| Serveur saturé | « Le serveur est momentanément chargé, nouvelle tentative automatique. » | `WARN … session \| server busy \| queue_depth=256 in_flight=8` |
+| En attente d'admission | « En attente — position 3 sur 12 » | `INFO … session \| queue enqueue \| position=3 depth=12` |
 
 L'**identifiant de demande affiché avec l'erreur** est le point qui rend le support (et la soutenance) possible : il relie ce que l'utilisateur a vu à la ligne de journal correspondante, sans lui montrer de détail technique.
 
@@ -813,7 +826,7 @@ Le protocole **v1.2** est **figé pour la phase 2** : après validation, toute �
 **Les trois règles qui rendent ces codes exploitables** (elles viennent de l'ASVS et des bonnes pratiques de RPC) :
 
 1. **Le client branche sur le code, jamais sur le texte** : le message peut être traduit ou reformulé, le code non.
-2. **Le message utilisateur et le message journal sont différents** (§7.2) : « Vous avez déjà 100 cartes actives » côté écran, `code=1001 card_id=- user=7` côté journal.
+2. **Le message utilisateur et le message journal sont différents** (§7.2) : « Vous avez déjà 100 cartes actives » côté écran, `business | rule refused | code=1001 user_id=7 reason=card_limit` côté journal.
 3. **Aucune trace technique ne sort du serveur** : pas de chemin de fichier, pas de requête SQL, pas de pile d'appel dans la réponse (`-32603` = message générique **+ identifiant de demande** affiché à l'utilisateur, pour retrouver la ligne de journal).
 
 #### 7.4.4. Les bornes de validation (§12 du protocole)
@@ -867,7 +880,7 @@ Aucune **règle** n'a changé : seule la **comptabilité** du document était fa
 | **1 — boucle d'événements** | Accepter, lire, écrire, fermer ; tenir les admissions ; répondre **vite** | Faire du minage, écrire en base, écrire un journal sur disque (ENF-18) | Haute |
 | **2 — séquenceur métier** | Appliquer **une action à la fois** : valider → miner → écrire → diffuser | Attendre un client (E/S bloquante sur un socket) | Normale |
 | **3 — échéances** | Battles **300 s**, revendications 30 j, battement de cœur 60 s, inactivité 300 s *(la légitimation n'a plus d'échéance : elle s'arbitre par le nombre de likes)* | Modifier une structure partagée sans le verrou de la chaîne | Normale |
-| **4 — écriture des journaux** | Vider la **file bornée** vers `zlog` | Bloquer si la file est pleine (on **abandonne** l'entrée et on compte) | Basse |
+| **4 — écriture des journaux** | Vider la **file bornée** vers le fichier local via l'unique writer du logger maison | Bloquer si la file est pleine ou le mutex occupé : l'entrée est abandonnée et comptée | Basse |
 | **5 — minage** | Miner **un seul bloc à la fois** (jamais en parallèle, §5.2.1 du CDC) | Prendre d'autres travaux | Basse |
 
 > **Pourquoi un seul séquenceur et pas un fil par client côté métier ?** Parce que la chaîne doit être **déterministe** : deux actions concurrentes qui créent un bloc porteraient des index identiques. Le serveur est le seul écrivain (ENF-05) ; ce n'est pas une limite, c'est la propriété qui rend la vérification de chaîne possible. La concurrence est donc dans l'**E/S** (100 clients servis en parallèle), pas dans l'**application des règles** (une à la fois, en série).
@@ -969,11 +982,10 @@ Une machine n'est pas constante : un conteneur bridé, un autre TP qui tourne, u
 **À quoi cela ressemble** (exemple de journal, machine chargée par un conteneur bridé) :
 
 ```
-2026-09-22T10:04:11.980Z | INFO | srv | - | r=- | chain | calibration      | hash_rate=198432 difficulty=4 pattern=0000 ms=151
-2026-09-22T10:31:07.114Z | INFO | srv | - | r=- | chain | block mined      | difficulty=4 nonce=84213 hashes=120488 ms=612
-2026-09-22T10:52:40.332Z | INFO | srv | - | r=- | chain | window analysis  | blocks=20 avg_ms=1043 out_of_band=2
-2026-09-22T10:52:40.335Z | INFO | srv | - | r=- | chain | difficulty changed | difficulty_before=4 difficulty_after=3 hash_rate=39120 reason=window_above_1s
-2026-09-22T10:52:40.336Z | INFO | srv | - | r=- | chain | block mined      | difficulty=3 nonce=2214 hashes=3391 ms=88
+2026-09-22T10:04:11.980Z | INFO | srv | c=- | r=- | chain | calibration | hash_rate=198432 difficulty=4 pattern=0000 ms=151
+2026-09-22T10:31:07.114Z | INFO | srv | c=- | r=- | chain | block mined | difficulty=4 nonce=84213 hashes=120488 ms=612
+2026-09-22T10:52:40.335Z | INFO | srv | c=- | r=- | chain | difficulty changed | difficulty_before=4 difficulty_after=3 hash_rate=39120
+2026-09-22T10:52:40.336Z | INFO | srv | c=- | r=- | chain | block mined | difficulty=3 nonce=2214 hashes=3391 ms=88
 ```
 
 > **L'analogue industriel** : Bitcoin fait exactement cela à grande échelle — un ajustement périodique visant un **temps de bloc cible**, avec un **plafond de variation** (facteur 4) pour empêcher les changements brutaux. Notre bande morte + confirmation sur 2 mesures + 5 minutes de délai minimal jouent le même rôle : **empêcher l'oscillation** plutôt que suivre la moindre fluctuation.
@@ -1015,7 +1027,7 @@ chain_mine(en-tête_partiel, difficulty, budget_ms):
 | Configuration | Difficulté attendue | Ce que le jury doit voir |
 |---|---|---|
 | Serveur **natif** sur le poste | 4 (débit élevé) | `hash_rate` élevé, blocs en quelques dixièmes de seconde |
-| Serveur en conteneur **bridé** (`--cpus=0.5`) | 3 après réévaluation | Un `difficulty changed old=4 new=3` **visible dans le journal**, et des blocs qui restent ≤ 1 s |
+| Serveur en conteneur **bridé** (`--cpus=0.5`) | 3 après réévaluation | Un `difficulty changed difficulty_before=4 difficulty_after=3` **visible dans le journal**, et des blocs qui restent ≤ 1 s |
 
 C'est le critère **REC-15** : la même chaîne, deux machines, **deux difficultés** — et une chaîne **toujours vérifiable**, parce que chaque bloc porte la sienne.
 
@@ -1027,9 +1039,9 @@ C'est le critère **REC-15** : la même chaîne, deux machines, **deux difficult
 | Élément | Détail | Source |
 |---|---|---|
 | **Postes de démonstration** | 4 postes sur le réseau local : 1 serveur (C + PostgreSQL) + 3 clients JavaFX (le 4ᵉ membre pilote la démonstration et lit les journaux) | §3.1 du CDC |
-| **Conteneurisation** | Image **Podman** reproductible : PostgreSQL + `zlog` + serveur compilé. Podman est validé par l'encadrant et sert de **parade** si l'installation de `zlog` échoue sur un poste (H3) | §5.8, H3 |
+| **Conteneurisation** | Image **Podman** reproductible : PostgreSQL + serveur compilé et son logger C maison ; aucune image ou installation de `zlog` requise | §5.8, H3 |
 | **Réseau** | Un **seul** port d'écoute applicatif, déclaré en configuration (valeur par défaut proposée : **7001** — aucun port n'est imposé par le sujet, valeur à figer en réunion) | ENF-26, ENF-27 |
-| **Configuration** | `zlog.conf`, `logback.xml`, `server.ini` (port, file d'attente, difficulté), `client.properties` (dernière IP/port) | §10.2, §11.2 |
+| **Configuration** | Seuil C par `ANIMETCG_LOG_LEVEL` ou `animetcg_log_set_level`; `logback.xml`, `server.ini` (port, file d'attente, difficulté), `client.properties` (dernière IP/port) | §10.2, §11.2 |
 | **Journaux** | `logs/` (non versionné) en local ; `journald`/`rsyslog` si les postes sont séparés | §10.9 |
 | **Sauvegarde de secours** | `pg_dump` daté + `scripts/restore.sh` **testé** avant la soutenance (RQ-01) | §12.1 du CDC |
 | **Tags** | `phase1` (**10/10/2026**), `phase2` (18/12/2026), `phase3` (15/01/2027), `phase4` (démo **18–21/01/2027**) | §11 du CDC et sujet officiel §9 à §12 |
@@ -1039,7 +1051,7 @@ C'est le critère **REC-15** : la même chaîne, deux machines, **deux difficult
 
 ## 10. Spécification détaillée n° 1 — Journalisation (ENF-55 → ENF-58)
 
-> **Statut** : 🔧 **décidé**, rédigé ici pour être implémenté tel quel. Le cahier des charges pose le *quoi* (§5.8) ; cette section est le *comment*, avec les valeurs, les formats et les tests.
+> **Statut au 14/10/2026** : le logger C maison est **implémenté et testé de façon autonome** (`make -C server/util clean test`; ASan/UBSan via `make -C server/util sanitize`). La fiche F-LOG-01 et le guide d'intégration décrivent le contrat réel. L'intégration aux modules métier et la recette bout en bout restent **à faire**, car le serveur applicatif complet n'est pas présent dans le dépôt.
 
 ### 10.1. Objectifs et cadre
 
@@ -1053,8 +1065,7 @@ Un journal n'existe pas pour « tracer que ça marche », mais pour **répondre 
 
 | Côté | Retenu | Licence | Conséquence pratique |
 |---|---|---|---|
-| **Serveur (C)** | **`zlog`** (`-lzlog`), configuration `zlog.conf`, validation par `zlog-chk-conf` | **LGPL** (2.1) → **liaison dynamique obligatoire** : on lie la bibliothèque partagée, on **ne la modifie pas** et on ne la lie pas statiquement. C'est la façon propre d'utiliser une bibliothèque LGPL dans un projet dont le code n'est pas LGPL | Aucune obligation sur notre code source ; l'image Podman embarque la bibliothèque |
-| **Serveur — repli** | `rxi/log.c` (2 fichiers vendus au dépôt), **uniquement** si H3 se réalise | MIT | Mêmes appels via une **façade** `util/log.h` : le jour où l'on bascule, **une seule couche change** (§5.2) |
+| **Serveur (C)** | Logger maison `server/util/log.c` et catalogue `log_events.c` ; C11 + POSIX + pthreads ; aucune bibliothèque de journalisation à lier ni configuration `zlog.conf` | Code livré avec SPDX `MIT`; dépendances système selon l'environnement de build | Pas de repli moteur : en cas d'initialisation impossible, l'application décide d'échouer ou d'utiliser son secours fixe sur `stderr` |
 | **Client (Java)** | **SLF4J** (API appelée) + **Logback** (moteur, `logback.xml`) | SLF4J : type **X11/MIT** · Logback : **EPL-1.0 *ou* LGPL-2.1** (double licence) | Le code n'importe **que** `org.slf4j.Logger` : le moteur reste remplaçable sans toucher au métier (§5.8.1 du CDC) |
 
 **Règle de code** : aucun `printf` ni `System.out.println` de diagnostic dans le code livré (ENF-55). La façade `util/log.h` est **la seule** porte d'entrée côté C — c'est ce qui permet le repli et ce qui rend la vérification `grep` possible en CI.
@@ -1070,13 +1081,15 @@ HORODATAGE | NIVEAU | SERVICE | c=CLIENT | r=REQUÊTE | MODULE | message | clés
 **Grammaire (ABNF)** — c'est ce que le test de conformité vérifie (§10.12) :
 
 ```abnf
-ligne      = horodatage sep niveau sep service sep client sep requete sep module sep message [sep cles] CRLF
+ligne      = horodatage sep niveau sep service sep client sep requete sep module sep message [sep cles] LF
 sep        = " | "
+LF         = %x0A                             ; un LF final, aucun CR
 horodatage = 4DIGIT "-" 2DIGIT "-" 2DIGIT "T" 2DIGIT ":" 2DIGIT ":" 2DIGIT "." 3DIGIT "Z"   ; UTC, milliseconde
 niveau     = "TRACE" / "DEBUG" / "INFO" / "WARN" / "ERROR" / "FATAL"
 service    = "srv" / "cli"
 client     = 1*DIGIT / "-"                    ; identifiant serveur ; "-" si aucun
-requete    = 1*12HEXDIG / "-"                 ; identifiant de demande (protocole §4.1)
+requete    = 12lowerhex / "-"                 ; identifiant de demande (protocole §4.1)
+lowerhex   = DIGIT / %x61-66                    ; 0-9, a-f uniquement
 module     = "net" / "protocol" / "business" / "chain" / "persistence" / "util"
            / "session" / "view" / "controller" / "model"
 message    = 1*120(texte sans "|" ni CR ni LF)     ; en anglais (ENF-34)
@@ -1097,7 +1110,7 @@ paire      = clé "=" valeur                   ; clé = 1*24(ALPHA / DIGIT / "_"
 
 **Règles d'écriture** (normatives) :
 
-1. **Longueurs bornées** : message ≤ 120 caractères, **valeur** ≤ 64 caractères, **ligne complète** ≤ 512 caractères. Un dépassement **tronque** et ajoute le suffixe `~` — on ne laisse jamais une charge utile de 60 Kio entrer dans un journal.
+1. **Longueurs bornées** : message ≤ 120 caractères, **valeur** ≤ 64 caractères, **ligne complète** ≤ 512 octets UTF-8, LF final inclus. Les champs omis sont comptés via `extra=N` ; toute troncature de ligne ajoute `~`. On ne laisse jamais une charge utile de 60 Kio entrer dans un journal.
 2. **Caractères interdits dans les champs** : `|`, CR, LF, NUL et tout caractère de contrôle. Ils sont **échappés** (§10.6), jamais supprimés silencieusement.
 3. **Nombre de clés** : ≤ **8 par ligne**. Au-delà, le reste est résumé (`extra=3`).
 4. **Ordre des clés stable** pour une même ligne de code : deux exécutions produisent la même ligne (comparaison de journaux en test possible).
@@ -1106,36 +1119,36 @@ paire      = clé "=" valeur                   ; clé = 1*24(ALPHA / DIGIT / "_"
 **Ce que ça donne, des deux côtés, pour une action** — c'est **le** livrable de démonstration de REC-17 :
 
 ```
-2026-09-18T19:12:03.101Z | DEBUG | cli | c=7 | r=ab12f3c4d5e6 | net      | request sent              | action=card.create bytes=318
-2026-09-18T19:12:03.118Z | INFO  | srv | c=7 | r=ab12f3c4d5e6 | protocol | request accepted          | action=card.create payload_bytes=294
-2026-09-18T19:12:03.412Z | INFO  | srv | c=7 | r=ab12f3c4d5e6 | chain    | block mined               | difficulty=4 nonce=31847 hashes=72144 ms=294
-2026-09-18T19:12:03.455Z | INFO  | srv | c=7 | r=ab12f3c4d5e6 | persistence | block committed        | block_index=118 cards=1 ms=43
-2026-09-18T19:12:03.457Z | INFO  | srv | -   | r=-            | net      | event broadcast           | event=card.created recipients=12
-2026-09-18T19:12:03.481Z | DEBUG | cli | c=7 | r=ab12f3c4d5e6 | net      | response received         | status=OK bytes=214
+2026-09-18T19:12:03.101Z | DEBUG | cli | c=7 | r=ab12f3c4d5e6 | net | request sent | action=card.create bytes=318
+2026-09-18T19:12:03.118Z | INFO | srv | c=7 | r=ab12f3c4d5e6 | protocol | request accepted | action=card.create payload_bytes=294
+2026-09-18T19:12:03.412Z | INFO | srv | c=7 | r=ab12f3c4d5e6 | chain | block mined | difficulty=4 nonce=31847 hashes=72144 ms=294
+2026-09-18T19:12:03.455Z | INFO | srv | c=7 | r=ab12f3c4d5e6 | persistence | block committed | block_index=118 cards=1 ms=43
+2026-09-18T19:12:03.457Z | INFO | srv | c=- | r=- | net | event broadcast | event=card.created recipients=12
+2026-09-18T19:12:03.481Z | DEBUG | cli | c=7 | r=ab12f3c4d5e6 | net | response received | status=OK bytes=214
 ```
 
 #### 10.3.1. Compléments normatifs — renvoi à la note de format de ligne
 
-Cette section fixe **la grammaire** ; la **nomenclature** (vocabulaire des messages, nommage des clés, correspondance vers syslog/ECS/OpenTelemetry, contrat de compatibilité) est définie dans **`docs/note-format-ligne.md` (v1.0, 22/09/2026)**, référence unique du format pour les deux langages. Trois de ses règles sont reprises ici parce qu'elles sont **testées** :
+Cette section fixe **la grammaire** ; la **nomenclature** (vocabulaire des messages, nommage des clés, correspondance vers syslog/ECS/OpenTelemetry, contrat de compatibilité) est définie dans **`docs/note-format-ligne.md` (v1.4, 14/10/2026)**, référence normative du format partagé. Dans ce checkout, le producteur C est implémenté dans `server/util/`; le client Java et son catalogue restent une cible non livrée/non testée. Trois règles sont reprises ici, en séparant les garanties du composant livré des vérifications restantes :
 
-| Règle | Portée | Test |
+| Règle | Portée | Garantie / preuve actuelle |
 |---|---|---|
-| Le **`message`** appartient à un **vocabulaire fermé de 69 entrées** (constantes `server/util/log_events.h` et `LogEvents.java`) — jamais une phrase libre, jamais une valeur interpolée | Les deux programmes | Test du vocabulaire fermé (note §13.2) |
-| Les **clés** sont normalisées : minuscules, `snake_case`, **unité dans le nom** (`ms`, `bytes`, `hashes`, `<sujet>_len`), **`<sujet>_before` / `<sujet>_after`** (jamais `old` / `new`), 8 clés au maximum | Les deux programmes | Test 1 (§10.12) + revue |
-| **Contrat de compatibilité** : les 8 champs positionnels ne sont **jamais** réordonnés, les clés s'ajoutent **uniquement en fin de ligne**, un lecteur **ignore** toute clé inconnue ; une rupture passerait par un nouvel identifiant de service (`animetcg-srv2`) | Toute évolution ultérieure | Revue de la note §11 |
+| Le **`message`** appartient au vocabulaire fermé de **70 entrées** — jamais une phrase libre ni une valeur interpolée | C implémenté ; Java futur | L'API C prend un enum et dérive message/module/niveau du catalogue ; `_Static_assert` et harnais contrôlent le compte (70) et des cas représentatifs. Le Markdown n'est pas comparé automatiquement ; parité complète en revue. Java/e2e à faire |
+| Les **clés** sont normalisées : minuscules, `snake_case`, **unité dans le nom** (`ms`, `bytes`, `hashes`, `<sujet>_len`), **`<sujet>_before` / `<sujet>_after`** (jamais `old` / `new`), 8 clés au maximum | C implémenté ; Java futur | Enum C fermé, types génériques et plafond vérifiés par le harnais ; valeurs sémantiques et pertinence clé/événement à la charge du producteur ; Java à intégrer/tester |
+| **Contrat de compatibilité** : les 7 champs positionnels ne sont **jamais** réordonnés, les clés s'ajoutent **uniquement en fin de ligne**, un lecteur **ignore** toute clé inconnue ; une rupture passerait par un nouvel identifiant de service (`animetcg-srv2`) | Toute évolution ultérieure | Contrat normatif de la note §11 ; revue requise lors de chaque évolution |
 
-> **Deux écarts assumés, écrits dans la note** : pas de champ `VERSION` dans la ligne (la compatibilité est garantie par les trois règles ci-dessus) ; écriture dans un fichier roté alors que le facteur XI du *12-Factor* demande de laisser le stockage à l'environnement (nous le faisons dans le conteneur, `podman logs`).
+> **Deux écarts assumés, écrits dans la note** : pas de champ `VERSION` dans la ligne (la compatibilité est garantie par les trois règles ci-dessus) ; écriture dans un fichier roté alors que le facteur XI du *12-Factor* recommande la sortie standard. Le logger C actuel n'écrit pas vers `stdout`; un agent système ou un adaptateur explicite reste nécessaire pour la collecte en conteneur.
 
 ### 10.4. Niveaux et affectation
 
 | Niveau | Ce qu'il contient | Exemples (serveur) | Exemples (client) |
 |---|---|---|---|
-| `TRACE` | Jamais en production. Réservé aux **32 premiers octets** d'une trame, en développement | `frame head` | `frame head` |
+| `TRACE` | Jamais en production. Réservé au diagnostic du décodage de trame, en développement | `frame read` | *(aucun événement client `TRACE` défini)* |
 | `DEBUG` | Détails utiles au développement : trames, requêtes SQL, diffusions | `query done`, `event broadcast` | `request sent`, `response received` |
 | `INFO` | **Les faits** : ce qui s'est réellement passé, y compris les admissions, minages, transferts | `block mined`, `client admitted`, `claim transferred` | `session welcomed`, `card created` |
 | `WARN` | Anomalie **récupérée** : base lente, client lent, file pleine, entrée de journal abandonnée, refus métier | `queue full`, `db slow`, `log dropped` | `server busy`, `resync requested` |
 | `ERROR` | Opération **échouée** alors qu'elle devait réussir | `db write failed`, `mining deadline exceeded`, `verification failed` | `connection lost`, `protocol error` |
-| `FATAL` | L'application ne peut plus rendre son service | `init failed` (`reason=config_invalid`), `listen failed` | `startup failed` (`reason=…`) |
+| `FATAL` | L'application ne peut plus rendre son service | `listen failed` | `startup failed` *(client uniquement)* |
 
 **Correspondance numérique des niveaux** (détail et sources : note de format de ligne §7.1) — c'est ce qui rend le niveau exploitable par un outil qui n'est pas le nôtre :
 
@@ -1153,7 +1166,7 @@ Cette section fixe **la grammaire** ; la **nomenclature** (vocabulaire des messa
 **Règles d'affectation** (pour éviter le débat en revue) :
 
 - Un **refus métier** (limite de 100 cartes, doublon de recommandation…) est un **`WARN`**, pas une `ERROR` : le système a fonctionné correctement.
-- **Toute** erreur écrite côté serveur porte `r=` — sans identifiant de demande, une erreur n'est pas corrélable.
+- Une erreur liée à une requête porte son `r`. Une erreur de démarrage, de transport avant corrélation ou d'infrastructure sans requête porte `r=-` ; ce n'est pas une absence de diagnostic.
 - Un **état de saturation** est journalisé en `WARN` avec les compteurs (`in_flight`, `queue_depth`) : c'est une donnée d'exploitation, pas une fatalité.
 - Le niveau **global est réglable sans recompiler** (ENF-58) : `ANIMETCG_LOG_LEVEL` côté C, `logback.xml` côté Java. Valeur par défaut : **`INFO`** ; `DEBUG` en développement ; `TRACE` jamais en démonstration.
 
@@ -1161,11 +1174,11 @@ Cette section fixe **la grammaire** ; la **nomenclature** (vocabulaire des messa
 
 | Identifiant | Qui le crée | Durée de vie | Où il vit |
 |---|---|---|---|
-| **`request_id`** (`r=`) | **Le client**, 12 caractères hexadécimaux aléatoires, à l'émission de chaque demande | Le temps de la demande (aller-retour) | Envoyé dans la trame, repris par le serveur, placé dans le **MDC** des deux côtés |
-| **`client_id`** (`c=`) | **Le serveur**, à l'admission | Toute la session | MDC |
-| **`session_id`** | Le serveur, à `session.welcome` | Toute la session | Journalisé au cycle de vie ; utile pour distinguer une reconnexion |
+| **`request_id`** (`r=`) | **Le client**, 12 caractères hexadécimaux minuscules, à l'émission de chaque demande | Le temps de la demande (aller-retour) | Envoyé dans la trame, repris par le serveur ; le client utilise SLF4J MDC et le serveur pose le contexte TLS via `animetcg_log_set_context()` |
+| **`client_id`** (`c=`) | **Le serveur**, à l'admission | Toute la session | Contexte TLS du logger C ou MDC Java ; toujours effacé à la fin du travail |
+| **`session_id`** | Le serveur, à `session.welcome` | Toute la session | Champ événementiel uniquement si le catalogue le prévoit ; ne constitue pas un champ positionnel de la ligne |
 
-**MDC = la même technique dans les deux langages** (`zlog` et Logback l'offrent tous les deux) : `c=` et `r=` sont posés **une fois** par connexion et par demande, puis ajoutés automatiquement à **chaque** ligne. C'est ce qui garantit que le format ne dépend pas de la discipline du développeur au moment d'écrire le message.
+Le **contexte C** est local au fil et est copié dans chaque record par le logger maison ; il ne se propage pas automatiquement vers un autre thread. Le code qui transmet une tâche doit copier `client_id`/`request_id`, puis poser le contexte dans le fil destinataire. Côté Java, le MDC de SLF4J/Logback reste l'outil de corrélation.
 
 **Exemple de lecture croisée** — la commande qui fusionne et filtre :
 
@@ -1184,7 +1197,12 @@ sort -t'|' -k1,1 logs/server.log logs/client-*.log | grep 'r=ab12f3c4d5e6'
 /* Escapes control characters and the field separator so that one log call
    always produces exactly one line. Never truncates in the middle of a
    UTF-8 sequence: the tail is dropped instead. */
-int log_sanitize(const char *in, char *out, size_t out_max);
+animetcg_log_status_t animetcg_log_sanitize(const unsigned char *input,
+                                             size_t input_length,
+                                             char *output,
+                                             size_t output_capacity,
+                                             size_t max_characters,
+                                             size_t *output_length);
 ```
 
 | Entrée | Sortie | Pourquoi |
@@ -1196,7 +1214,7 @@ int log_sanitize(const char *in, char *out, size_t out_max);
 | UTF-8 invalide | `?` par octet invalide | Assainissement définitif : le journal reste lisible par un outil |
 | Valeur > 64 caractères | 64 caractères + `~` | Borne la ligne (§10.3) |
 
-**Test associé (obligatoire, automatisé)** : créer une carte dont le titre contient `\n2026-01-01T00:00:00.000Z | INFO | srv | ...` puis vérifier que le fichier de journal a **augmenté d'exactement une ligne** et qu'aucune ligne ne **commence** par l'horodatage forgé. Ce test est en phase 2, pas « plus tard ».
+**Preuve C actuelle :** le harnais maison soumet une valeur hostile (LF, timestamp forgé et séparateur) dans un champ texte, vérifie que l'appel produit exactement un record physique et retrouve la valeur échappée dans la ligne ; le scanner rejette aussi les lignes malformées. Le test ne journalise pas un vrai titre de carte — ce texte est interdit — et ne couvre pas encore l'intégration métier ni le futur client Java. Ces producteurs doivent appliquer la même règle et ajouter leurs tests avant la recette e2e.
 
 ### 10.7. Ce qui ne va jamais dans un journal (CWE-532, RGPD)
 
@@ -1205,7 +1223,7 @@ int log_sanitize(const char *in, char *out, size_t out_max);
 | Mots de passe, jetons, clés | CWE-532, ASVS 7.1.1 | *Sans objet* : aucun mot de passe dans le périmètre |
 | **Charge utile complète** d'une trame | Elle contient du texte libre saisi par l'utilisateur (titre, synopsis, justification) | Le **nom de l'action**, le nombre d'octets, l'identifiant de l'objet (`card_id`) |
 | Texte libre saisi (synopsis, justification, pseudo en clair dans un message) | Donnée personnelle ou contenu utilisateur : inutile à l'investigation | `card_id=42`, `claim_id=7`, `justification_len=118` |
-| Adresse IP **en clair dans les messages** | Donnée personnelle (RGPD) | `c=7` (identifiant) ; l'adresse IP reste **disponible dans une ligne dédiée `DEBUG`** du serveur, avec la même rétention que le reste — utile pour l'investigation, jamais recopiée ailleurs |
+| Adresse IP hors ligne dédiée | Donnée personnelle (RGPD) | `c=7` (identifiant) ; seule exception côté C : clé `ip` sur `client address`, événement `DEBUG` dédié. L'API refuse cette clé sur tout autre événement ; aucune recopie dans un message |
 | Valeurs recalculables (valeur d'une carte, propriétaire) | Elles changent : un journal faux vaut pire que pas de journal | Les **variations** : `value_before=7.0 value_after=8.0 cause=recommendation` |
 | Chemin absolu d'un fichier système, contenu de `/etc/passwd`, variables d'environnement | Fuite d'information gratuite (CWE-532) | Rien |
 
@@ -1215,13 +1233,13 @@ int log_sanitize(const char *in, char *out, size_t out_max);
 
 | Sujet | Valeur retenue | Justification |
 |---|---|---|
-| **Rotation (C)** | `zlog`, **10 Mo × 5 fichiers** par journal, rotation **native** | Borne le disque sans outil externe (NIST SP 800-92 recommande une rotation fréquente et un plafond explicite) |
+| **Rotation (C)** | Logger maison : **10 MiB × 5 fichiers au total** (actif + `.1` à `.4`), rotation par taille sur le fil écrivain | Borne le disque sans moteur externe ; rotation couverte par le harnais C |
 | **Rotation (Java)** | `RollingFileAppender`, **10 Mo × 5**, `totalSizeCap` 50 Mo | Idem, symétrique |
 | **Plafond total** | **50 Mo par programme** (serveur, puis chaque client) | Un disque plein en démonstration est un risque évité par construction |
 | **Rétention** | **6 mois maximum**, purge par `scripts/logs-purge.sh` (fichiers > 180 j) | Position constante de la **CNIL** sur les journaux d'accès applicatifs ; principe de **limitation de conservation** (RGPD art. 5.1.e). Les 50 Mo bornés font que la purge est un filet de sécurité, pas le mécanisme principal |
-| **Emplacement** | `logs/` à côté de l'exécutable, **non versionné** (`.gitignore`) | Ce sont des **données d'exécution** : aucun journal ne part dans le dépôt |
+| **Emplacement** | Répertoire transmis à `animetcg_log_init` (défaut d'intégration `logs/`, relatif au `WorkingDirectory`), **non versionné** (`.gitignore`) | Ce sont des données d'exécution ; le logger ne dérive pas le chemin depuis `argv[0]` |
 | **Droits** | Dossier `0750`, fichiers `0640`, propriétaire = compte de service | Les journaux ne sont **pas** lisibles par tous (protocole §12 : la zone serveur reste de confiance, mais autant éviter le `cat` de trop) |
-| **Intégrité** | Écriture **append-only**, jamais de réécriture en place ; horodatage UTC monotone | Un journal réécrit n'est plus une preuve (ISO 27001 **A.5.33**, protection des enregistrements) ; la protection forte vient du niveau 1 de centralisation (§10.9) |
+| **Intégrité** | Les records complets restent **append-only** ; après arrêt brutal ou écriture partielle, le logger peut tronquer uniquement le suffixe sans `LF` jusqu'au dernier record complet, et désactive le descripteur si ce rollback échoue ; horodatage UTC strictement croissant pendant la vie du processus | Aucun record complet n'est réécrit ; la fin incomplète n'est pas concaténée avec la prochaine ligne. La monotonie ne traverse pas un redémarrage si l'horloge système recule ; synchroniser les hôtes et éviter ces retours relèvent du déploiement. La protection forte contre la modification vient du niveau 1 de centralisation (§10.9) |
 | **Horloges** | `systemd-timesyncd`/NTP, UTC sur tous les postes | Sans horloges synchronisées, la fusion chronologique est fausse (**A.8.17**) |
 
 ### 10.9. Centralisation — trois niveaux, dont deux dans le périmètre
@@ -1229,7 +1247,7 @@ int log_sanitize(const char *in, char *out, size_t out_max);
 | Niveau | Contexte | Mécanisme | Commande de démonstration |
 |---|---|---|---|
 | **0** | Développement et tests : tout sur la même machine | Fichiers `logs/`, **format identique** | `sort -t'\|' -k1,1 logs/server.log logs/client-*.log` |
-| **1** | Démonstration : postes séparés | C → `syslog` · Java → `SyslogAppender` · **`journald`** centralise | `journalctl -f -t animetcg-srv -t animetcg-client` |
+| **1** | Démonstration : postes séparés | C écrit le fichier local ; une configuration **rsyslog `imfile`** doit le transférer vers le collecteur. Java peut utiliser `SyslogAppender`. Le logger C n'a pas de sortie syslog intégrée | Après configuration et vérification du collecteur distant, utiliser son outil de consultation ; `journalctl -t ...` n'est valide que si le transport local vers journald est effectivement configuré |
 | **2** | 🎁 Hors périmètre S3 | Agrégateur (Graylog/GELF, Fluentd), tableaux de bord, alertes | *À mentionner en soutenance comme évolution* |
 
 **Correspondance avec syslog (RFC 5424)** — la conversion est faite par la configuration, pas par le code :
@@ -1251,12 +1269,12 @@ int log_sanitize(const char *in, char *out, size_t out_max);
 
 | Mécanisme | Côté serveur | Côté client |
 |---|---|---|
-| File d'attente | **Bornée à 4096 entrées**, message ≤ 512 o → ≈ **2 Mo au pire** | `AsyncAppender`, `queueSize=4096`, `discardingThreshold=0` (donc **jamais** de blocage appelant) |
-| Écriture | **Fil dédié n° 4** (§8.1) : la boucle d'événements **dépose** et continue | Le fil JavaFX **ne journalise jamais** en écriture directe |
-| File pleine | L'entrée est **abandonnée**, un compteur s'incrémente, une ligne de synthèse **au plus une fois par 5 s** (`WARN log dropped \| dropped=N`) | Événement de perte récupérable via un `StatusPrinter` au démarrage |
+| File d'attente | **4096 records**, chacun `uint16_t` + 512 octets ; allocation unique de **2 105 344 octets ≈ 2,01 MiB** à l'initialisation | Cible Java non livrée : `AsyncAppender`, `queueSize=4096`, `discardingThreshold=0`, `neverBlock=true` ; le drapeau explicite évite de bloquer quand la file est pleine |
+| Écriture | Un thread écrivain dédié ; chaque producteur construit un record borné puis utilise `pthread_mutex_trylock`. Contention ou file pleine : perte comptée, pas d'attente | Cible Java : le fil JavaFX ne doit pas effectuer d'E/S synchrone ; wrapper asynchrone à intégrer/tester |
+| File pleine | L'entrée est **abandonnée**, un compteur s'incrémente, une ligne de synthèse **au plus une fois par 5 s** (`WARN log dropped \| dropped=N`) | Cible Java : perte à rendre observable par un compteur/diagnostic ; mécanisme non implémenté ni testé dans ce checkout |
 | Interdits | Écriture disque depuis la boucle d'événements ; `fsync` par ligne ; journalisation d'une charge utile complète | Idem côté client |
 
-Le principe est celui d'**ENF-18** appliqué au journal : *on perd une ligne de trace plutôt que la réponse à 100 clients*. Une perte de journal est **visible** (compteur + ligne de synthèse), donc jamais silencieuse.
+Le principe est celui d'**ENF-18** appliqué au journal : *on perd une ligne de trace plutôt que la réponse à 100 clients*. Côté C, la perte est **visible** (compteur + ligne de synthèse) ; le futur client Java devra fournir et tester un mécanisme de visibilité équivalent.
 
 ### 10.11. Volumétrie — dimensionner plutôt que subir
 
@@ -1272,33 +1290,35 @@ Base de calcul : **≈ 160 octets par ligne**, **≈ 800 octets par action** ré
 
 ### 10.12. Tests de la journalisation (REC-17)
 
-| # | Test | Critère de réussite |
+Les critères ci-dessous restent la cible de recette REC-17 ; le statut distingue les preuves déjà exécutées sur le composant C autonome de l'intégration serveur/client encore absente.
+
+| # | Critère de recette | Statut dans ce checkout |
 |---|---|---|
-| 1 | **Format** — 1000 lignes échantillonnées, serveur et client | 100 % conformes à la grammaire §10.3 (regex `^\d{4}-…Z \| (TRACE\|DEBUG\|INFO\|WARN\|ERROR\|FATAL) \| (srv\|cli) \| c=…`) |
-| 2 | **Une ligne = un événement** — provoquer une exception Java | La pile apparaît sur **une seule** ligne ; le nombre de lignes augmente de 1 |
-| 3 | **Fusion** | `sort -t'\|' -k1,1 logs/server.log logs/client-*.log` produit un ordre chronologique **strictement croissant** |
-| 4 | **Corrélation de bout en bout** | Pour 20 identifiants de demande tirés au sort : présents **des deux côtés**, avec la ligne client **avant** la ligne serveur |
-| 5 | **Anti-injection (CWE-117)** | Pseudo/titre forgé (§10.6) → **+1 ligne exactement**, aucune ligne commençant par l'horodatage forgé |
-| 6 | **Anti-fuite (CWE-532)** | `grep -Eic "password\|secret\|token\|synopsis=" logs/*.log` → **0** |
-| 7 | **Non-blocage (ENF-57)** | Avec la file de journalisation saturée (point d'injection de test), une demande d'un client admis répond en **≤ 500 ms** et `dropped=N` apparaît |
-| 8 | **Rotation** | Écrire > 10 Mo : au plus **5** fichiers par journal, total **≤ 50 Mo**, le plus ancien supprimé |
-| 9 | **Niveau réglable (ENF-58)** | Redémarrer avec `DEBUG` : de nouvelles lignes `DEBUG` apparaissent, **sans recompilation** |
-| 10 | **Rétention** | `scripts/logs-purge.sh --dry-run` liste les fichiers > 180 j, et uniquement ceux-là |
+| 1 | Format — au moins 1 000 lignes, C et Java, conformes à la grammaire | **C exécuté** : le harnais valide toutes les lignes qu'il a produites (plus de 10 000), leurs bornes, le préfixe et l'ordre UTC local. Échantillonnage Java/e2e en attente |
+| 2 | Une ligne = un événement — pile d'exception Java sur une ligne | **En attente** : client Java absent ; le harnais C teste séparément l'échappement d'un champ hostile |
+| 3 | Fusion — `sort -t'\|' -k1,1` produit l'ordre chronologique strict | **Partiel** : l'ordre strict est vérifié dans les fichiers rotatés C ; fusion des journaux C/Java non exécutée |
+| 4 | Corrélation bout en bout — 20 identifiants présents des deux côtés | **En attente** : intégration métier et client Java absents de ce checkout |
+| 5 | Anti-injection CWE-117 — valeur hostile, exactement un record physique, aucun faux préfixe | **C exécuté** dans le harnais avec LF, timestamp forgé et séparateur ; titre utilisateur réel interdit du journal, intégration métier/Java encore à tester |
+| 6 | Anti-fuite CWE-532 — recherche de secrets/données interdites dans les journaux | **En attente** : pas de scan d'intégration applicatif ; l'API assainit mais n'identifie pas les secrets sémantiques |
+| 7 | Non-blocage ENF-57 — sous saturation, producteur répond en ≤ 500 ms et la perte est observable | **C exécuté** : writer suspendu par injection de test, appels producteurs < 500 ms et compteurs de pertes vérifiés ; latence de réponse socket à tester avec le serveur |
+| 8 | Rotation — > 10 MiB, au plus 5 fichiers, plafond nominal ≤ 50 MiB | **C exécuté** dans le harnais maison |
+| 9 | Niveau réglable — seuil `DEBUG` effectif sans recompilation | **Partiel** : défaut `INFO` et changement à chaud vérifiés dans le harnais ; lecture de `ANIMETCG_LOG_LEVEL` et redémarrage de l'application non couverts par ce test |
+| 10 | Rétention — `scripts/logs-purge.sh --dry-run` cible uniquement les fichiers > 180 j | **Script exécuté** sur des fichiers/répertoires temporaires (dry-run, suppression, liens/sous-dossiers et chemins dangereux) ; ordonnanceur et recette sur hôte restent à faire |
 
 ### 10.13. Conformité — ce que l'on peut répondre au jury
 
 | Référence | Exigence | Notre réponse |
 |---|---|---|
-| ISO 27001 **A.8.15** | Produire, protéger, conserver, relire | Deux bibliothèques dédiées, format normatif, droits `0640`, rétention 6 mois, revue en démonstration |
+| ISO 27001 **A.8.15** | Produire, protéger, conserver, relire | Cœur C maison livré, format normatif, droits `0640`, purge 180 jours testée sur répertoire temporaire ; Java, collecte, planification et revue de déploiement restent à réaliser |
 | ISO 27001 **A.8.16** | Surveiller, détecter l'anomalie | Compteurs d'observabilité (§8.5), lignes `WARN` de saturation, revue en soutenance |
-| ISO 27001 **A.8.17** | Horloges synchronisées | UTC, milliseconde, NTP, horloge monotone pour les durées |
+| ISO 27001 **A.8.17** | Horloges synchronisées | Le C produit de l'UTC milliseconde, son horloge locale est monotone ; NTP relève du déploiement et Java reste à intégrer |
 | ISO 27001 **A.5.33** | Protection des enregistrements | Append-only, droits restreints, copie syslog possible |
-| NIST SP 800-92 | Centralisation, rotation, protection, revue | 3 niveaux de centralisation, rotation 10 Mo × 5, droits, revue |
-| ASVS **7.1.1 / 7.1.2** | Ne pas journaliser de données sensibles | Liste d'interdits (§10.7) + test 6 |
+| NIST SP 800-92 | Centralisation, rotation, protection, revue | Rotation 10 MiB × 5 et droits C implémentés ; centralisation, revue opérationnelle et collecte restent à configurer au déploiement |
+| ASVS **7.1.1 / 7.1.2** | Ne pas journaliser de données sensibles | Liste d'interdits (§10.7) et revue d'intégration requise ; le scan automatique du test 6 reste à exécuter, l'API ne détecte pas les secrets sémantiques |
 | ASVS **7.1.3** | Journaliser les événements de sécurité | Poignée de main, refus, dépassements de charge, erreurs de validation : tous en `WARN`/`INFO` |
 | ASVS **7.1.4** | Horodatage + éléments d'investigation | Horodatage, `c=`, `r=`, module, action, code d'erreur |
-| ASVS **7.3.1** | Encoder pour empêcher l'injection | `log_sanitize` + test 5 |
-| ASVS **7.3.3 / 7.3.4** | Protéger les journaux ; UTC | Droits restreints, dossier non versionné, UTC partout |
+| ASVS **7.3.1** | Encoder pour empêcher l'injection | `animetcg_log_sanitize` + test hostile C du harnais ; client Java et intégration métier à tester |
+| ASVS **7.3.3 / 7.3.4** | Protéger les journaux ; UTC | Droits `0750/0640` et répertoire non versionné côté C ; UTC produit par le C, synchronisation NTP et client Java à déployer/intégrer |
 | ASVS **7.4.1** | Message générique côté utilisateur | Tableau §7.2 (identifiant de demande affiché, détail dans le journal) |
 
 ---
@@ -1360,17 +1380,17 @@ Toute erreur de format, de version ou de poignée de main ──────► 
 
 | Cas | Échange (extrait) | Ce que voit le client | Journal serveur |
 |---|---|---|---|
-| **1ᵉʳ au 100ᵉ client** | `session.hello` → `RES status=OK` + `session.welcome` | Connexion immédiate | `INFO client admitted \| c=… admitted=…` |
-| **101ᵉ client** | `session.hello` → `RES status="QUEUED"` + `position=1`, `queue_length=1` | « En attente — position 1 » | `INFO queue enqueue \| c=… position=1 depth=1` |
-| **Position qui avance** | `EVT session.queue_update` | La barre d'état décrémente, sans action de sa part | — (événement calculé) |
-| **File pleine (100 en attente)** | `RES status=ERR code=-32002 QUEUE_FULL` puis fermeture | Message explicite : « serveur complet, réessayez plus tard » | `WARN queue full \| depth=100 refused=…` |
-| **Attente > 60 s** | `RES status=ERR code=-32003 QUEUE_TIMEOUT` puis fermeture | Message explicite, retour à l'écran de connexion | `WARN queue timeout \| c=… waited_ms=60004` |
-| **Place libérée** | `EVT session.welcome` (avec le contexte, CU-7) | La plateforme s'ouvre | `INFO client admitted \| c=… waited_ms=12480` |
-| **Client en attente qui se déconnecte** | Fermeture de socket | — | `INFO queue leave \| c=… position=12` — la file **avance** |
-| **Client admis qui plante** | Détection de fermeture, ou expiration en ≤ 180 s | Les autres voient `client.disconnected` | `WARN session expired \| c=… last_seen_ms=…` |
-| **Client qui n'envoie pas sa poignée de main en 5 s** | Fermeture | — | `WARN handshake timeout \| peer=…` |
-| **Action inconnue hors catalogue** | `RES status=ERR code=-32601` | Message d'erreur | `WARN unknown action \| action=card.authenticate` |
-| **Semaine de démonstration, tout va bien** | — | Barre d'état : `admis=4/100, en attente=0, difficulté=4` | `INFO` périodique (1 ligne / 60 s, niveau configurable) |
+| **1ᵉʳ au 100ᵉ client** | `session.hello` → `RES status=OK` + `session.welcome` | Connexion immédiate | `INFO | srv | c=… | r=- | session | client admitted` |
+| **101ᵉ client** | `session.hello` → `RES status="QUEUED"` + `position=1`, `queue_length=1` | « En attente — position 1 » | `INFO | srv | c=… | r=- | session | queue enqueue | position=1 depth=1` |
+| **Position qui avance** | `EVT session.queue_update` | La barre d'état décrémente, sans action de sa part | `DEBUG | srv | c=… | r=- | session | queue update | position=… depth=…` |
+| **File pleine (100 en attente)** | `RES status=ERR code=-32002 QUEUE_FULL` puis fermeture | Message explicite : « serveur complet, réessayez plus tard » | `WARN | srv | c=… | r=- | session | queue full | depth=100` |
+| **Attente > 60 s** | `RES status=ERR code=-32003 QUEUE_TIMEOUT` puis fermeture | Message explicite, retour à l'écran de connexion | `WARN | srv | c=… | r=- | session | queue timeout | ms=60004` |
+| **Place libérée** | `EVT session.welcome` (avec le contexte, CU-7) | La plateforme s'ouvre | `INFO | srv | c=… | r=- | session | client admitted | ms=12480 depth=0` |
+| **Client en attente qui se déconnecte** | Fermeture de socket | — | `INFO | srv | c=… | r=- | session | client disconnected | reason=user` — la file **avance** |
+| **Client admis qui plante** | Détection de fermeture ou expiration par heartbeat (≤ 180 s) / inactivité (300 s) | Les autres voient `client.disconnected` | `WARN | srv | c=… | r=- | session | client expired | ms=180000 reason=heartbeat` |
+| **Client qui n'envoie pas sa poignée de main en 5 s** | Fermeture | — | `WARN | srv | c=… | r=- | session | client expired | ms=5000 reason=handshake_timeout` |
+| **Action inconnue hors catalogue** | `RES status=ERR code=-32601` | Message d'erreur générique | `ERROR | srv | c=… | r=ab12f3c4d5e6 | protocol | protocol error | code=-32601 action=card.authenticate` |
+| **Semaine de démonstration, tout va bien** | — | Barre d'état : `admis=4/100, en attente=0, difficulté=4` | Aucun événement périodique dédié : éviter le bruit |
 
 **Invariant important** : un client **en attente** ne peut déclencher **aucune** action métier — ni création, ni recommandation, ni vote. La seule chose qu'il peut faire est **partir**. C'est ce qui garantit qu'aucun travail n'est accepté qu'on ne pourrait pas honorer.
 
@@ -1447,11 +1467,11 @@ Dans l'état `EN_ATTENTE`, la connexion **n'est pas lue** et **n'occupe aucun fi
 **Lignes de journal correspondantes** (format §10.3) — elles sont **le** point de preuve en soutenance :
 
 ```
-2026-09-18T19:20:01.104Z | WARN | srv | c=101 | r=-            | net     | queue enqueue       | position=1 depth=1 admitted=100
-2026-09-18T19:20:31.220Z | INFO | srv | c=101 | r=-            | net     | client admitted     | waited_ms=30116 depth=0
-2026-09-18T19:21:02.007Z | WARN | srv | c=207 | r=-            | net     | queue full          | depth=100 refused_total=7
-2026-09-18T19:21:44.511Z | WARN | srv | c=206 | r=-            | net     | queue timeout       | waited_ms=60004
-2026-09-18T19:22:10.900Z | WARN | srv | -   | r=-            | business| work queue saturated | pending=256 action=card.create
+2026-09-18T19:20:01.104Z | INFO | srv | c=101 | r=- | session | queue enqueue | position=1 depth=1
+2026-09-18T19:20:31.220Z | INFO | srv | c=101 | r=- | session | client admitted | ms=30116 depth=0
+2026-09-18T19:21:02.007Z | WARN | srv | c=207 | r=- | session | queue full | depth=100
+2026-09-18T19:21:44.511Z | WARN | srv | c=206 | r=- | session | queue timeout | ms=60004
+2026-09-18T19:22:10.900Z | WARN | srv | c=- | r=- | session | server busy | queue_depth=256 in_flight=8
 ```
 
 ### 11.10. Test de charge (REC-03)
@@ -1665,8 +1685,7 @@ Un document de sécurité qui ne liste pas ses limites n'est pas un document de 
 
 | Composant | Rôle | Licence (SPDX) | Obligation pratique | Vérifié |
 |---|---|---|---|---|
-| **zlog** | Journalisation C | **LGPL-2.1** | **Liaison dynamique** (`-lzlog`) ; pas de modification de la bibliothèque ; si on la modifie, les modifications se publient. Notre code reste sous notre licence | ✅ (documentation du projet) |
-| **rxi/log.c** (repli) | Journalisation C | **MIT** | Conserver la notice de copyright dans le fichier vendu dans le dépôt | ✅ |
+| **Logger C maison** (`server/util/`) | Journalisation serveur | **MIT** (`SPDX-License-Identifier: MIT` dans les sources) | Aucun moteur de journalisation tiers ; aucune obligation LGPL liée à zlog | ✅ (source et tests du dépôt) |
 | **OpenSSL** (`libcrypto`) | SHA-256 | **Apache-2.0** (3.x) | ✅ **Autorisée nommément par le sujet** (§10) | ✅ |
 | **jansson** | JSON (C) | **MIT** | ✅ **Déclarée** (choix libre, 22/09/2026) — ENF-59 ; notice conservée | ✅ |
 | **cJSON** (repli) | JSON (C) | **MIT** | Idem | ✅ |
@@ -1677,7 +1696,7 @@ Un document de sécurité qui ne liste pas ses limites n'est pas un document de 
 | **libpq / PostgreSQL** | Base de données | **PostgreSQL License** (type MIT) | Aucune | ✅ |
 | **Maven, JUnit 5, JaCoCo, gcovr, Podman, Git, GitLab CE** | Outillage | Licences libres (Apache-2.0 / EPL-2.0 / permissives) | Aucune ; **aucune n'impose de publier notre code** | 🔧 à confirmer au dépôt (fichier `LICENSE` de chaque projet) avant le tag `phase3` |
 
-**Contexte juridique du projet** : le dépôt est un **dépôt GitLab privé d'établissement**, non distribué, à usage pédagogique, **budget 0 €**. Les obligations de **redistribution** (fournir les sources, notices, offres de reliage) ne se déclenchent pas dans ce cadre ; **la seule obligation structurelle est la liaison dynamique de `zlog`** (LGPL), qui est de toute façon la façon normale de l'utiliser. On garde malgré tout l'inventaire à jour, parce que c'est trois minutes et que c'est ce qu'on attend d'une équipe sérieuse.
+**Contexte juridique du projet** : le logger C livré est du code du dépôt déclaré SPDX MIT ; aucune dépendance zlog/rxi n'est intégrée. Les notices des autres composants du tableau restent à maintenir selon leurs licences, indépendamment de la politique d'usage interne du projet.
 
 **Action de la checklist** : au moment du tag `phase3`, ouvrir `THIRD-PARTY.md` (une ligne par dépendance : nom, version, licence, où c'est utilisé) et faire confirmer les licences marquées 🔧.
 
@@ -1687,7 +1706,7 @@ Un document de sécurité qui ne liste pas ses limites n'est pas un document de 
 |---|---|
 | **Aucun secret dans le dépôt** | Pas de mot de passe de base, pas de clé, pas de jeton. `server.ini` versionné avec des **valeurs de développement**, surchargé localement (`server.local.ini`, ignoré par Git) |
 | **`.gitignore`** | `logs/`, `target/`, `*.o`, `build/`, `server.local.ini`, `client.properties`, dumps `*.sql` de test |
-| **Configuration versionnée** | `zlog.conf`, `logback.xml` **sont** versionnés : ce sont des choix de conception, pas des secrets |
+| **Configuration versionnée** | Aucun `zlog.conf` côté C : seuil par `animetcg_log_config_t`, `ANIMETCG_LOG_LEVEL` et API ; `logback.xml` Java est versionné, sans secret |
 | **Revue avant fusion** | Relecture croisée obligatoire ; convention de commits `type(scope): description` en anglais (ENF-39) |
 
 ---
@@ -1704,7 +1723,7 @@ Le sujet de phase 3 demande explicitement de **réorganiser le code à partir de
 | **O / L** — ouverture/fermeture, substitution | Table de dispatch des actions (`protocol/actions.c`) : ajouter une action = ajouter une entrée | Pas de `switch` géant à modifier dans trois fichiers |
 | **I** — ségrégation des interfaces | `chain_api.h` (2 fonctions) et `store_api.h` (2 fonctions) au lieu d'une interface « serveur » fourre-tout | Le métier ne dépend pas des 20 fonctions de la persistance |
 | **D** — inversion de dépendance | `business` **possède** ses interfaces ; `chain` et `persistence` les implémentent (§4.4) | Le métier se teste avec des doublures, sans base ni socket |
-| **Stratégie / façade** | `util/log.h` (façade sur `zlog`, repli `rxi/log.c`), `protocol/json_io.h` (façade sur `jansson`), `chain/sha256.h` (façade sur OpenSSL) | Changer une bibliothèque non autorisée = changer **un fichier** |
+| **Façade / API métier** | `server/util/log.h` (logger C maison et contrat stable), `protocol/json_io.h` (façade sur `jansson`), `chain/sha256.h` (façade sur OpenSSL) | Les appels métier restent découplés des détails d'implémentation ; le logger n'a pas de moteur tiers à remplacer |
 | **MVC** (patron imposé) | Client Java (ENF-50) | La vue ne contient aucune règle métier |
 | **Fabrique** | `session` : création des objets de connexion et de leur cycle de vie en un seul endroit | Évite les fuites de descripteurs et l'oubli de libération des places d'admission |
 
@@ -1725,7 +1744,7 @@ Le sujet de phase 3 demande explicitement de **réorganiser le code à partir de
 
 | Niveau | Ce qui est testé | Volumétrie cible (phase 2) | Outil |
 |---|---|---|---|
-| **Unitaire C** | `chain` (hash, minage, vérification), `protocol` (décodage, bornes, robustesse), `business` (règles pures) | **≥ 30 tests** | CUnit ou harnais maison + `gcov`/`gcovr` |
+| **Unitaire C** | `chain` (hash, minage, vérification), `protocol` (décodage, bornes, robustesse), `business` (règles pures) | **≥ 30 tests** | Harnais maison avec Makefile ; aucun framework de tests C externe + `gcov`/`gcovr` si retenus en phase 3 |
 | **Unitaire Java** | Modèle, corrélateur, codec, contrôleurs (sans IHM) | **≥ 15 tests** | JUnit 5 + JaCoCo |
 | **Intégration** | Serveur + PostgreSQL + client de test : une action de bout en bout, la transaction bloc+projection, la restauration | ≥ 5 scénarios | scripts `tests/integration/` |
 | **Bout en bout (e2e)** | Client Java réel ↔ serveur : connexion, création, recommandation, battle, revendication | **≥ 5 scénarios** | client de test + captures |
@@ -1775,7 +1794,7 @@ Le sujet de phase 3 demande explicitement de **réorganiser le code à partir de
 | **ENF-44 → ENF-47** (validation, confiance, SQL paramétré, intégrité) | §12.2, §6.3 | Tests `business` ; démonstration d'altération en phase 4 |
 | **ENF-49** (intégration continue) | §13.4 | Badge du pipeline dans le dépôt |
 | **ENF-50** (MVC) | §4.3 + DOC-03 | Relecture : `ServerConnection` seul point réseau |
-| **ENF-52** (difficulté dans le hash) | **§6.5** | **Vecteurs dorés §6.5.6** (hash de `""`/`"abc"`, en-tête + nonce 13 423) ; test d'altération : `difficulty` 4 → 3 ⇒ hash différent **au bloc modifié** et chaîne rompue **au bloc suivant** |
+| **ENF-52** (difficulté dans le hash) | **§6.5** | **Vecteurs dorés §6.5.6** (hash de `""`/`"abc"`, en-tête JCS + nonce 1 484, corrigé en v0.8) ; test d'altération : `difficulty` 4 → 3 ⇒ hash différent au bloc modifié |
 | **ENF-51 / ENF-53** (banc de calibrage, réévaluation amortie) | **§8.6 → §8.8** | Ligne de journal `calibration` (mesure ≤ 250 ms) ; `difficulty.changed` après 2 mesures hors bande ; démonstration REC-15 (natif contre bridé) |
 | **ENF-54** (saturation, file d'attente) | **§11**, dont **§11.13** (dimensionnement) et **§11.14** (invariants, équité FIFO, runbook) | Tests A → G du §11.10 (REC-03) et invariants **I1 → I7** |
 | **ENF-55 → ENF-58** (journalisation, format, non-blocage, réglage) | **§10** | Tests 1 → 10 du §10.12 (REC-17) |
@@ -1801,7 +1820,8 @@ Le sujet de phase 3 demande explicitement de **réorganiser le code à partir de
 | **ADR-02** | **Un séquenceur unique** applique les actions métier | La chaîne doit rester déterministe | **+** aucun conflit d'index de bloc, raisonnement simple ; **−** la charge métier n'est pas parallèle (le parallélisme est dans l'E/S) | Un fil par client côté métier (index de bloc en course) |
 | **ADR-03** | **Chaîne = source de vérité**, projections écrites **dans la même transaction** | Deux écritures séparées peuvent diverger | **+** restauration rapide, cohérence garantie ; **−** une transaction par action, plus lente qu'un `INSERT` seul | Tout relire depuis la chaîne à chaque démarrage (lent), ou ne garder que les projections (invérifiable) |
 | **ADR-04** | **jansson** comme bibliothèque JSON, profondeur max **32** | Il faut décoder du JSON venu du réseau | **+** limite de profondeur documentée et configurable, licence MIT ; **−** une dépendance de plus à installer | cJSON (vulnérabilités 2026 sur les utilitaires, limite à 1000 par défaut) |
-| **ADR-05** | Journalisation **`zlog` + SLF4J/Logback**, format unique, MDC des deux côtés | Deux langages, un seul journal à lire | **+** fusion par tri, corrélation par `request_id` ; **−** une bibliothèque C à installer (repli `rxi/log.c` documenté) | `printf`/`println` (non filtrables), `syslog(3)` seul (pensé pour le système) |
+| **ADR-05 — superseded 14/10/2026** | Choix historique : journalisation **`zlog` + SLF4J/Logback**, format unique, MDC des deux côtés | Décision de septembre 2026, remplacée par ADR-15 côté C ; SLF4J/Logback reste côté Java | Motif historique : sorties multiples/MDC/rotation ; coût et dépendance LGPL côté C | Historique conservé pour traçabilité ; aucun usage courant de `zlog` ou `rxi/log.c` |
+| **ADR-15** | Serveur C : logger maison `server/util/`, format/catalogue AnimeTCG, file bornée de 4096 records, producteur non bloquant ; client Java conserve SLF4J/Logback | Besoin explicite d'un logger C réutilisable, sans dépendance de journalisation et aligné aux exigences ENF-55→58 | **+** API typed/event closed, contrôle des champs/IP, testable sans framework tiers ; **−** coût de maintenance, pas de sorties multiples ni de support multiprocessus ; intégration métier et planification de purge 180 j séparées | Remplace zlog/rxi côté C ; conserve les pratiques utiles des références zlog, rxi/log.c et log4c sans reprendre leurs API |
 | **ADR-06** | File d'**admission bornée** (100 / 60 s) + rejet explicite | 100 clients simultanés est la cible | **+** refus clair, mémoire bornée, zéro fil consommé ; **−** un client peut être refusé alors que le serveur « va » se libérer | File non bornée (effondrement), refus immédiat sans file (perte d'utilisateurs sur un pic) |
 | **ADR-07** | Minage **non parallélisé**, difficulté **3 ou 4** calibrée, **temps visé 0,3–2 s** | Éviter d'écraser le processeur en démonstration | **+** débit prévisible, ≤ 1 s ; **−** un bloc à la fois, latence visible | Paralléliser (fausse le calibrage, chauffe la machine) |
 | **ADR-08** | **Horloge UTC** pour dater, **horloge monotone** pour mesurer | Un ajustement NTP fausse les durées | **+** corrélation correcte, durées justes ; **−** deux API à ne pas confondre (test de revue) | `clock()` seule, temps local |
@@ -1839,31 +1859,35 @@ Le sujet de phase 3 demande explicitement de **réorganiser le code à partir de
 ### Annexe A — Extrait de journal réel attendu (à comparer en soutenance)
 
 ```
-2026-09-18T19:12:01.002Z | INFO  | srv | -   | r=-            | net        | listening                 | port=7001 backlog=128 somaxconn=4096
-2026-09-18T19:12:02.110Z | INFO  | srv | -   | r=-            | persistence| database ready            | blocks=117 users=4
-2026-09-18T19:12:02.115Z | INFO  | srv | -   | r=-            | chain      | chain verified            | blocks=117 duration_ms=812
-2026-09-18T19:12:04.331Z | INFO  | srv | c=1 | r=-            | net        | client admitted           | depth=0 admitted=1
-2026-09-18T19:12:04.402Z | DEBUG | cli | c=1 | r=7f3a91c2d4e5 | net        | request sent              | action=card.create bytes=318
-2026-09-18T19:12:04.418Z | INFO  | srv | c=1 | r=7f3a91c2d4e5 | protocol   | request accepted          | action=card.create payload_bytes=294
-2026-09-18T19:12:04.712Z | INFO  | srv | c=1 | r=7f3a91c2d4e5 | chain      | block mined               | difficulty=4 nonce=31847 hashes=72144 ms=294
-2026-09-18T19:12:04.755Z | INFO  | srv | c=1 | r=7f3a91c2d4e5 | persistence| block committed           | block_index=118 cards=1 ms=43
-2026-09-18T19:12:04.757Z | INFO  | srv | -   | r=-            | net        | event broadcast           | event=card.created recipients=1
-2026-09-18T19:12:04.781Z | DEBUG | cli | c=1 | r=7f3a91c2d4e5 | net        | response received         | status=OK bytes=214
-2026-09-18T19:24:10.005Z | WARN  | srv | c=101 | r=-          | net        | queue enqueue             | position=1 depth=1 admitted=100
-2026-09-18T19:24:40.117Z | INFO  | srv | c=101 | r=-          | net        | client admitted           | waited_ms=30112 depth=0
-2026-09-18T19:25:00.900Z | ERROR | srv | -   | r=-            | chain      | verification failed       | block_index=54 reason=hash_mismatch
+2026-09-18T19:12:01.002Z | INFO | srv | c=- | r=- | session | server started | hash_rate=198432 difficulty=4
+2026-09-18T19:12:01.100Z | INFO | srv | c=- | r=- | session | listen ready | port=7001 backlog=128
+2026-09-18T19:12:02.110Z | INFO | srv | c=- | r=- | persistence | restore done | blocks=117 ms=812
+2026-09-18T19:12:02.115Z | INFO | srv | c=- | r=- | chain | chain verified | blocks=117 checked=117
+2026-09-18T19:12:04.331Z | INFO | srv | c=1 | r=- | session | client connected
+2026-09-18T19:12:04.340Z | DEBUG | srv | c=1 | r=- | session | client address | ip=192.0.2.7
+2026-09-18T19:12:04.402Z | DEBUG | cli | c=1 | r=7f3a91c2d4e5 | net | request sent | action=card.create bytes=318
+2026-09-18T19:12:04.410Z | DEBUG | srv | c=1 | r=7f3a91c2d4e5 | net | request received | bytes=318
+2026-09-18T19:12:04.418Z | INFO | srv | c=1 | r=7f3a91c2d4e5 | protocol | request accepted | action=card.create payload_bytes=294
+2026-09-18T19:12:04.712Z | INFO | srv | c=1 | r=7f3a91c2d4e5 | chain | block mined | block_index=118 difficulty=4 nonce=31847 hashes=72144 ms=294
+2026-09-18T19:12:04.755Z | INFO | srv | c=1 | r=7f3a91c2d4e5 | persistence | block committed | block_index=118 cards=1 ms=43
+2026-09-18T19:12:04.757Z | DEBUG | srv | c=- | r=- | net | event broadcast | event=card.created recipients=1
+2026-09-18T19:12:04.781Z | DEBUG | cli | c=1 | r=7f3a91c2d4e5 | net | response received | status=OK bytes=214
+2026-09-18T19:25:00.900Z | ERROR | srv | c=- | r=- | chain | verification failed | block_index=54 reason=hash_mismatch
 ```
 
 ### Annexe B — Extraits de configuration
 
-**`zlog.conf`** (extrait) :
+**Configuration du logger C** — elle est fournie par l'application au démarrage ; il n'existe pas de fichier `zlog.conf` :
 
-```ini
-[global]
-default = main
-[rules]
-*.*        >stdout; main
-*.WARN     "logs/server.log", 10MB * 5 ~ "logs/server-#2r.log"; main
+```c
+const animetcg_log_config_t config = {
+    .directory = "logs",
+    .filename = "server.log",
+    .minimum_level = ANIMETCG_LOG_LEVEL_INFO
+};
+if (animetcg_log_init(&config) != ANIMETCG_LOG_OK) {
+    /* Démarrage en échec ou mode dégradé décidé par l'application. */
+}
 ```
 
 **`logback.xml`** (extrait) :
@@ -1872,7 +1896,7 @@ default = main
 <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
   <file>logs/client.log</file>
   <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
-    <fileNamePattern>logs/client-%i.log</fileNamePattern><maxIndex>5</maxIndex>
+    <fileNamePattern>logs/client-%i.log</fileNamePattern><maxIndex>4</maxIndex>
   </rollingPolicy>
   <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
     <maxFileSize>10MB</maxFileSize>
@@ -1957,6 +1981,7 @@ balayer_chaque_seconde():                   # fil « échéances »
 
 | Version | Date | Auteur | Contenu |
 |---|---|---|---|
+| **0.8** | **14/10/2026** | Équipe SAÉ | **Noyau cryptographique C, guide d’intégration et correction de cohérence** — ajout du SHA-256, de l'en-tête 96 octets, de la preuve de travail et de la vérification de chaîne (`server/chain/`) avec 96 assertions de recette ; guide `docs/guide-integration-crypto-c.md` couvrant framing TCP, parsing, PostgreSQL/libpq, transactions/projections et vérification ; compilation stricte, ASan/UBSan et `-fanalyzer` exécutés ; le canonicaliseur RFC 8785 reste une responsabilité de la couche JSON ; vecteur JCS corrigé (clés triées, hash et nonce recalculés) ; NFC distingué de JCS ; contrôle des projections séparé de la vérification de chaîne ; schéma SQL v1.6 bornant `block_index` à `UINT32_MAX`. |
 | **0.7** | **22/09/2026** | Équipe SAÉ | **Valeurs par défaut retenues comme définitives + minage en fourchette** — ① **toutes les valeurs par défaut deviennent finales** : file 100 places/60 s (option A), 8 demandes en vol, heartbeat 60 s, `JSON_MAX_DEPTH` 32, port 7001, `linserv-info-01` en recette / Podman en développement, partage ciblé **inscrit en blockchain (option A)**, **reprise de session** pour un pseudo déjà connecté, bot de maintenance = charge + vérification de chaîne, bibliothèques hors liste **retenues et déclarées** ; ② **seule exception : le minage passe de ≤ 1 s à la fourchette 0,3 s – 2 s** (§5.2.1, §8.5, §8.8, §12.5, annexe D) — calibration `k=4` dès 32 768 h/s, réévaluation hors [0,3 ; 2], **délai de garde 4 s** ; ③ **§15.2 est clos** (tous les points tranchés) |
 | **0.6** | **22/09/2026** | Équipe SAÉ | **L'équipe n'a plus d'encadrant : les questions externes deviennent des décisions d'équipe** — ① **§15.2** : point 4 (minage) et **point 9 (authentification, R19)** **clos** par décision d'équipe ; ② **libuv écartée** : boucle d'événements écrite à la main avec **`epoll`** (§4.4, §12.5) ; ③ **§5.3.2** : les bibliothèques hors liste du sujet sont **retenues, déclarées et justifiées**, chacune avec un **repli** (plus de demande d'autorisation, plus de destinataire) ; ④ **§12.4/§13** : grille interne du « dépôt organisé et exploitable » (barème du sujet appliqué au mot). Voir `questions-encadrant.md` v5 |
 | **0.5** | **22/09/2026** | Équipe SAÉ | **Réponses de l'équipe au questionnaire rempli (n° 41)** — ① **§6.1** : entités `legitimation_likes`, `friendships`, `shares` ajoutées, valeur d'une carte corrigée (`points de reco × multiplicateur de rang`), valeur d'utilisateur (Q3.2), revendication sans `SANS_OBJET` ; ② **§7.4.2** : les actions passent de 21 à **23** (deux actions de partage ciblé, limite de cartes à **100**, vote de 5 min **définitif** → `1020`, `legitimation.respond` devient un « like ») ; **§7.4.3** : **30 codes** ; ③ **§6.4** et **§8.4** : plus de scrutin de légitimation de 60 s, battle de **300 s** ; ④ **§15.2** : nouveau **point ouvert n° 11** — le partage ciblé est hors blockchain alors que la chaîne est la source de vérité. |

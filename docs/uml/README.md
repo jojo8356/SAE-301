@@ -45,8 +45,8 @@ Le script encode la source au format d'URL PlantUML (deflate + base64) et interr
 |---|---|---|
 | `sql/schema.sql` | **DDL PostgreSQL exécutable** (v1.5) : **14 tables** (dont `legitimation_likes`, `friendships`, `shares`), contraintes `CHECK`, index partiels, principes source de vérité / projections | DOC-07, §5.4 |
 | `docs/protocole-applicatif.md` | **Spécification du protocole v1.2** : trame, grammaire ABNF, **23 actions**, **22 événements**, **30 codes d'erreur**, versionnage, robustesse, sources industrielles | ENF-19 → ENF-27 |
-| `docs/note-format-ligne.md` | **Note de format de ligne v1.3** (22/09/2026) : forme d'une ligne de journal, rattachée à la **RFC 5424** (structure, `MSGID`, `NILVALUE`, facilities), à **logfmt** (queue `clé=valeur`), à **ECS** et à **OpenTelemetry** ; vocabulaire fermé de **64 événements**, clés normalisées, table des niveaux, mapping syslog/JSON, contrat de compatibilité | §5.8.2, ENF-56 |
-| `docs/specification-technique.md` | **Spécification technique DOC-09 v0.7** (22/09/2026) : 17 sections en points de vue (IEEE 1016), **architecture en couches** (§4.4 → §4.6), **journalisation** (§10, ENF-55→58), **saturation** (§11 + loi de Little §11.13), **calibrage de la difficulté et hachage canonique** (§6.5, §8.6 → §8.9), **relecture du protocole** (§7.4), sécurité/RGPD/licences, traçabilité, **12 ADR**, 38 références | **DOC-09**, ENF-51 → ENF-58 |
+| `docs/note-format-ligne.md` | **Note de format de ligne v1.4** (14/10/2026) : forme d'une ligne de journal, rattachée à la **RFC 5424**, à **logfmt**, à **ECS** et à **OpenTelemetry** ; vocabulaire fermé de **70 événements**, clés normalisées, table des niveaux, mapping syslog/JSON, contrat de compatibilité | §5.8.2, ENF-56 |
+| `docs/specification-technique.md` | **Spécification technique DOC-09 v0.9** (14/10/2026) : 17 sections, dont le logger C maison autonome (§10, ENF-55→58) avec fiche et guide d'intégration, la saturation (§11), l'architecture en couches (§4.4→§4.6), le hachage canonique (§6.5, §8.6→§8.9) et la relecture du protocole (§7.4) | **DOC-09**, ENF-51 → ENF-58 |
 
 ## Comment les produire / les rendre
 

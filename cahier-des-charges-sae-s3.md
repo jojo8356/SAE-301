@@ -6,7 +6,7 @@
 |---|---|
 | Nom de code du projet | **AnimeTCG** — nom **définitif**, retenu par l'équipe le 18/09/2026 (Q8.1). *Le nom provisoire « AniCard » est abandonné.* |
 | Nature du document | **Cahier des charges interne** — expression du besoin rédigée par l'équipe pour cadrer son propre projet |
-| Version | **0.24** — brouillon de travail ; **aligné sur le sujet officiel 2026-2027** (sujet général, phases 1 à 4) : échéances, volume horaire, authentification des cartes, bibliothèques autorisées, partage ciblé, règles de démonstration — voir le journal des versions et `docs/diff-sujet-2026.md` |
+| Version | **0.25** — révision du 14/10/2026 : implémentation autonome du logger C maison (F-LOG-01), catalogue de 70 événements et alignement de la spécification/guide ; la décision historique zlog/rxi est explicitement remplacée par ADR-15. Les appels dans le serveur applicatif restent à intégrer |
 | Date | 18 septembre 2026 — **révision du 22/09/2026** (sujet officiel, décisions d'équipe) |
 | Équipe | **4 étudiants** — configuration acceptée par l'encadrant ; le sujet officiel prévoit « environ cinq étudiants » (voir §6.1 et §6.2) |
 | Encadrant | Johan — ressource **SAÉ 301** (60 % du temps de SAÉ) — **jusqu'au 22/09/2026** (l'équipe décide seule depuis) |
@@ -114,7 +114,7 @@ Ce domaine a été retenu parce qu'il offre :
 | SGBD | **PostgreSQL** installé localement |
 | Versioning | **Git**, dépôt GitLab de l'établissement — <https://iut-git.unice.fr/sae_but2_grp3_c/sae-301>, tags `phase1` → `phase4` |
 | Langages imposés | **C** (serveur + tests serveur), **Java** (clients + GUI + tests clients) |
-| Bibliothèques pressenties | **OpenSSL** (hachage), **libpq** (accès PostgreSQL), **JavaFX**, **JUnit** ; hors liste du sujet : **jansson** (JSON C), **zlog** (journal C), **SLF4J + Logback** (journal Java), **gcovr/JaCoCo** (couverture) — **déclarées** avec repli documenté ; **la boucle d'événements est écrite à la main (`epoll`)** |
+| Bibliothèques pressenties | **OpenSSL** (hachage), **libpq** (accès PostgreSQL), **JavaFX**, **JUnit** ; hors liste du sujet : **jansson** (JSON C), **SLF4J + Logback** (journal Java), **gcovr/JaCoCo** (couverture) — **déclarées** avec repli documenté. Le serveur utilise un **logger C maison**, sans moteur tiers ; **la boucle d'événements est écrite à la main (`epoll`)** |
 | Outils de build | Makefile (C), Maven (Java) |
 | Diagrammes | **UML** (PlantUML versionné + outil graphique au choix) |
 | Outils de documentation | Markdown, GitLab, chaîne documentaire |
@@ -239,7 +239,7 @@ Réalisables **uniquement** après que le périmètre ferme est intégré, test�
 |---|---|
 | H1 | Un poste **Debian** et l'instance **PostgreSQL de `linserv-info-01`** (LAN de l'IUT, cf. sujet §10) sont accessibles pour le développement et la démonstration ; à défaut, PostgreSQL local via Podman |
 | H2 | Les 4 membres disposent d'un accès au dépôt GitLab et peuvent travailler de façon régulière, malgré un volume horaire faible. |
-| H3 | Les bibliothèques de la **liste officielle** (**OpenSSL**, **libpq**, interfaces POSIX de R305, **JavaFX**, **JUnit**) sont disponibles sur le parc. Les bibliothèques **hors liste** que nous retenons (jansson, zlog, SLF4J/Logback, gcovr/JaCoCo) sont **déclarées et justifiées** par l'équipe, **chacune avec un repli documenté** (ENF-59, §5.9.1) — il n'y a plus d'autorisation extérieure à demander |
+| H3 | Les bibliothèques de la **liste officielle** (**OpenSSL**, **libpq**, interfaces POSIX de R305, **JavaFX**, **JUnit**) sont disponibles sur le parc. Les bibliothèques **hors liste** retenues (jansson, SLF4J/Logback, gcovr/JaCoCo) sont **déclarées et justifiées** par l'équipe, avec les replis pertinents documentés (ENF-59, §5.9.1) ; aucune autorisation extérieure n'est à demander selon la décision de l'équipe du 22/09. Le logger C maison n'ajoute pas de bibliothèque externe |
 | H4 | Le réseau local autorise les connexions socket entre le poste serveur et les postes clients (y compris depuis Podman). |
 | H5 | Un jeu de données de démonstration (animes réels, métadonnées factuelles) et un **jeu d'images dont la licence autorise l'usage** (avec crédits) peuvent être préparés à l'avance (ENF-60, sujet §10 « Les clients ») |
 | H6 | Aucun pare-feu ni proxy ne bloque le port applicatif choisi. |
@@ -802,7 +802,7 @@ Trois détails de mise en œuvre qui évitent des bugs coûteuses :
 |---|---|---|---|
 | DOC-07 | **Modèle relationnel** PostgreSQL | Tables, clés, contraintes — schéma relationnel exigé par le sujet. **Produit le 19/09/2026, mis à jour le 22/09/2026 (v1.4)** : diagramme `docs/uml/12-modele-relationnel.puml` + **DDL exécutable** `sql/schema.sql` (**14 tables** — dont `authentications`, contraintes `CHECK`, index partiels, principes source-de-vérité / projections) | 1 ✅ |
 | DOC-08 | **Diagramme de Gantt** | Planification projet (exigé par le sujet pour la partie projet) | 3 |
-| DOC-09 | **Spécification technique** | Document complet exigé par le sujet. ✅ **Version 0.7 du 22/09/2026** : `docs/specification-technique.md` — **17 sections / 1943 lignes**, **46 références sourcées**, **12 ADR**, organisée en **points de vue IEEE 1016-2009**, adossée à **ISO/IEC/IEEE 42010**, **ISO/IEC 27001 A.8.15 → A.8.17**, **NIST SP 800-92**, **OWASP ASVS V5 et V7**, **CNIL (2021-122)**, **FIPS 180-4**, **RFC 8785** et **Google SRE** ; contient la **rédaction complète de la journalisation (§10)** et **de la saturation (§11)**, l'**architecture en couches et son contrôle automatique (§4.4 → §4.6)**, le **calibrage de la difficulté et le hachage canonique (§6.5, §8.6 → §8.9)** et le **dossier de relecture du protocole (§7.4)** | 1 🔧 puis 3 |
+| DOC-09 | **Spécification technique** | Document complet exigé par le sujet. ✅ **Version 0.9 du 14/10/2026** : `docs/specification-technique.md` — 17 sections, organisée en points de vue IEEE 1016-2009 et adossée aux normes du projet. Elle contient la spécification actualisée de la journalisation C (§10, ENF-55→58), du logger autonome et de ses preuves/périmètre, de la saturation (§11), de l'architecture en couches (§4.4→§4.6), du hachage canonique (§6.5, §8.6→§8.9) et de la relecture du protocole (§7.4) | 1 🔧 puis 3 |
 | DOC-10 | **Support de présentation** | Structure imposée par le sujet §12.2 : introduction, organisation du groupe, répartition des tâches, architecture serveur, architecture clients, structures de données, base de données, blockchain, protocole applicatif, **un diagramme de séquence au choix**, **un problème technique rencontré (analyse + solution)**, conclusion — notre « problème technique » est le **hachage de la difficulté variable** (§5.2.1, ENF-52) | 4 |
 
 > Sources versionnées dans `docs/uml/` au format **PlantUML**, avec exports PNG/SVG joints à la spécification technique. Le format Mermaid n'est pas utilisé.
@@ -817,40 +817,44 @@ Trois détails de mise en œuvre qui évitent des bugs coûteuses :
 
 **Le problème.** Au démarrage du projet, la tentation est le `printf` côté C et le `System.out.println` côté Java. Ça dépanne une heure, puis ça coûte cher : pas de niveau, pas d'horodatage, pas de fichier, impossible de filtrer, impossible de corréler le client et le serveur, et des traces de debug oubliées dans la démonstration. **ENF-40** demandait déjà une journalisation structurée côté serveur ; cette section la rend concrète et l'étend aux deux composants.
 
-#### 5.8.1. Une bibliothèque par langage — choix de l'équipe
+#### 5.8.1. Un moteur dédié par langage — décision C maison et comparaison
 
-| Côté | Bibliothèque retenue | Pourquoi | Alternatives écartées |
+| Côté | Choix actif | Dépendances / statut | Rôle |
 |---|---|---|---|
-| **Serveur (C)** | **`zlog`** (HardySimpson) — bibliothèque liée au projet (`-lzlog`) | La **plus complète** des bibliothèques de journalisation en C, et **aucune dépendance externe** (POSIX + C99). **Niveaux définis librement**, **format et destinations pilotés par un fichier de configuration** (`zlog.conf` : fichier statique, fichier dynamique, `stdout`, `stderr`, syslog, sortie personnalisée), **rotation native** par taille et par nombre de fichiers, **sûreté entre threads *et* entre processus** (indispensable avec le worker de minage), **MDC** — les mêmes paires clé-valeur que Logback, donc **la même façon de porter l'identifiant de demande des deux côtés**, **rechargement de la configuration à chaud** (`zlog_reload`), ≈ **250 000 messages/s**, et un outil `zlog-chk-conf` qui **valide la configuration avant lancement** | **`rxi/log.c`** — *plan B*, conservé : **2 fichiers** C99 sous licence MIT, rien à installer, mais **ni rotation, ni MDC, ni configuration externe**. Servira de **repli** si l'installation s'avère impossible sur le parc (H3). **`log4c`** : plus lourd (option libxml2). **`syslog(3)`** seul : conçu pour le système, pas pour l'application |
-| **Client (Java)** | **SLF4J** (façade) + **Logback** (implémentation) | Le **standard de fait** en Java, gratuit, déclaré dans `pom.xml` et rien d'autre. **Configuration externe** (`logback.xml`) : on change le niveau sans recompiler. **`MDC`** pour attacher l'identifiant client et l'identifiant de demande à **toutes** les lignes. **Appenders** : console, fichier, **rotation**, **asynchrone**, et **`SyslogAppender`** pour la centralisation (voir 5.8.3) | **`java.util.logging`** : intégré mais pauvre (pas de MDC, configuration pénible). **Log4j 2** : excellent, mais SLF4J + Logback couvre le besoin avec une configuration plus simple. Le code n'appelle **jamais** Logback directement : toujours l'API SLF4J, pour rester remplaçable |
+| **Serveur (C)** | Logger **maison** versionné dans `server/util/` (`log.c`, `log.h`, `log_events.c`, `log_events.h`) | C11, POSIX, `pthread`; aucun moteur de journalisation C externe. Test autonome par le harnais et le `Makefile` du module, sans framework C tiers. Intégration aux appels métier du serveur **à faire** | API structurée du projet : catalogue fermé, niveau, contexte TLS, champs typés, file bornée, writer dédié et rotation |
+| **Client (Java, cible)** | **SLF4J** (façade) + **Logback** (moteur visé) | Aucun code client ni `pom.xml` n'est présent dans ce checkout ; ces artefacts ne sont donc pas compilés/testés ici | À l'intégration, le client devra respecter le format commun et propager le même `request_id` |
 
-> ❓ **« Pourquoi deux noms ? »** — Ce ne sont **pas deux bibliothèques de journalisation**, et il n'y a **qu'un seul journal**. **SLF4J** est l'**interface** : c'est ce qui est appelé dans le code (`LoggerFactory.getLogger(...)`, puis `logger.info(...)`). **Logback** est le **moteur** qui écrit réellement les lignes derrière cette interface. Autrement dit : **deux artefacts dans le `pom.xml`, une seule API appelée**. Le code n'importe **que** `org.slf4j.Logger` — Logback n'apparaît jamais dans une ligne de code, seulement dans la configuration (`logback.xml`).
->
-> **Pourquoi cette séparation ?** (1) **Remplaçabilité** : changer de moteur (Log4j 2, `java.util.logging`) se fait en remplaçant **une dépendance Maven**, sans toucher au code métier. (2) **Point d'entrée unique** : les bibliothèques tierces du client qui journalisent via SLF4J produisent leurs lignes **dans le même fichier, au même format**, au lieu de créer des journaux parallèles qu'il faudrait ensuite rapprocher à la main — c'est précisément ce que la centralisation du 5.8.3 cherche à éviter.
+**Comparaison des pratiques C — références officielles, non dépendances.** Ces projets ont été comparés pour reprendre des principes d'ingénierie, pas pour faire un classement de performance. Les sources sont répertoriées au §17 de DOC-09 et dans la fiche `docs/fiche-fonctionnalite-logger-c.md`.
 
-> ⚙️ **Mise en place** : `zlog` s'installe en deux commandes (`make && sudo make install` → bibliothèque partagée + `zlog.conf`) et se lie avec `-lzlog -lpthread` ; il est **gratuit (0 €)**. Si l'installation est impossible sur les postes de l'IUT (H3), deux parades : **l'embarquer dans l'image Podman** — acceptée par l'encadrant — ou **basculer sur le plan B** `rxi/log.c`, qui se contente de deux fichiers vendus dans le dépôt. Le choix est **figé en phase 1**, une fois le parc vérifié.
+| Projet | Pratiques documentées par ses sources officielles | Décision AnimeTCG |
+|---|---|---|
+| **zlog** | Catégories/règles configurables, plusieurs destinations, MDC, rotation et synchronisation annoncée entre threads/processus | **Non intégré**. Son étendue est utile comme référence ; elle n'enlève pas le travail d'adaptation au vocabulaire et au format AnimeTCG et ajoute une dépendance C tierce |
+| **rxi/log.c** | API C99 compacte, niveaux, `FILE *`/callbacks et crochet de verrouillage | **Non intégré**. Le repli historique est retiré ; l'API maison couvre les besoins d'AnimeTCG sans copier ce code |
+| **log4c** | Catégories, appenders, layouts, configuration XML et destinations dont fichier/syslog | **Non intégré**. Architecture de comparaison ; fonctionnalités/configuration plus étendues que le périmètre de la SAÉ |
 
-> 🔁 **Symétrie des deux choix** : `zlog` et Logback se ressemblent volontairement — **configuration externe** (`zlog.conf` / `logback.xml`), **niveaux par catégorie**, **sorties multiples dont syslog**, **rotation native**, **MDC**. La même architecture de journalisation, dans deux langages, avec le même vocabulaire : c'est ce qui rend le format unique crédible et la relecture facile en soutenance.
+> **Conflit de décision — résolution explicite.** La version 0.21 du cahier des charges et l'ADR-05 avaient retenu **zlog** avec `rxi/log.c` en repli ; cette décision n'est plus active. Le **14/10/2026**, l'ADR-15 la remplace par le logger maison C et conserve SLF4J/Logback comme choix cible pour Java (client non présent/non intégré dans ce checkout). L'historique reste cité pour traçabilité, pas comme une dépendance à installer ou un code validé. L'API, les limites, les erreurs et la validation actuelles sont décrites dans DOC-09 §10, F-LOG-01 et GUIDE-LOG-01.
 
-> 🎯 **Règle d'usage** : dans le code livré, **aucun `printf` ni `System.out.println` de diagnostic** ne subsiste (ENF-55). Les sorties de l'interface utilisateur (textes affichés dans la fenêtre JavaFX) ne sont pas des journaux et ne sont pas concernées.
+Le logger C autonome est déjà compilable et testé dans `server/util/`. La présence des fichiers ne signifie pas que les couches `net`, `protocol`, `business`, `chain` ou `persistence` l'appellent : ce raccordement dépend de l'intégration du serveur applicatif, encore absente de ce dépôt.
+
+> 🎯 **Règle d'usage :** aucun `printf` ni `System.out.println` de diagnostic dans le code livré (ENF-55). Les sorties visibles dans la GUI JavaFX ne sont pas des journaux.
 
 #### 5.8.2. Le format unique — c'est **lui** qui rend la centralisation possible
 
-**Une ligne = un événement. Jamais de message multiligne** (une exception Java est aplatie sur une ligne, la pile est écrite à la suite). Les deux langages produisent **exactement le même format** :
+**Une ligne = un événement. Jamais de message multiligne** (une exception Java devra être aplatie sur une ligne, sa pile écrite à la suite). Le format commun est spécifié pour C et Java. Le formatter C est implémenté dans `server/util/`; le client Java et sa configuration Logback ne sont pas présents dans ce checkout, donc la parité côté client reste à réaliser et à tester :
 
-> 📄 **Ce format a une référence écrite : la note d'ingénierie `docs/note-format-ligne.md` (v1.3, 22/09/2026, 568 lignes, 69 entrées de vocabulaire).** Elle ne décrit pas seulement la ligne : elle **fonde chaque choix sur un standard** et fournit les tables de correspondance qui rendent le format vérifiable. Le tableau ci-dessous est le résumé de ce qu'elle apporte.
+> 📄 **Ce format a une référence écrite : la note d'ingénierie `docs/note-format-ligne.md` (v1.4, 14/10/2026, catalogue de 70 entrées).** Elle ne décrit pas seulement la ligne : elle **fonde chaque choix sur un standard** et fournit les tables de correspondance qui rendent le format vérifiable. Le tableau ci-dessous est le résumé de ce qu'elle apporte.
 >
 > | Ce que la note apporte | D'où ça vient (standard) |
 > |---|---|
 > | **Structure** : en-tête positionnel + données structurées + message | **RFC 5424** (syslog) : `HEADER SP STRUCTURED-DATA SP MSG` |
 > | **Queue `clé=valeur`** et ses règles d'échappement (`\"`, `\\`, `\n`, `\t`) | Convention **logfmt** (Heroku) |
-> | **`message` = nom d'événement**, jamais une phrase : **vocabulaire fermé de 69 entrées** | RFC 5424 **`MSGID`** ≈ ECS `event.action` ≈ OpenTelemetry `EventName` |
+> | **`message` = nom d'événement**, jamais une phrase : **vocabulaire fermé de 70 entrées** | RFC 5424 **`MSGID`** ≈ ECS `event.action` ≈ OpenTelemetry `EventName` |
 > | **Niveaux numérotés** : syslog `6`, ECS `event.severity=6`, OpenTelemetry `SeverityNumber=9` pour `INFO` | RFC 5424 table 2 + modèle de journal OpenTelemetry |
 > | **Diffusion syslog** : facility `local0` (16), `PRIVAL` `<134>`, `MSGID`, SD-ID `[animetcg@32473 …]` | RFC 5424 (facilities 16-23, données structurées, RFC 5612) |
 > | **Nommage des clés** : minuscules, `snake_case`, **unité dans le nom** (`ms`, `bytes`, `hashes`), `<sujet>_before` / `<sujet>_after` | Guides de journalisation structurée, schéma ECS |
 > | **Contrat de compatibilité** : champs jamais réordonnés, clés ajoutées en fin de ligne, lecteurs tolérants | Champ `VERSION` de la RFC 5424 + lecture tolérante (RFC 1122) |
 >
-> ⚠️ **Un écart assumé, et écrit noir sur blanc** : le *12-Factor* demande qu'une application n'écrive **jamais** de fichier de journal (flux d'événements sur la sortie standard, l'environnement stocke). C'est ce que nous faisons **dans le conteneur** (`podman logs`) ; sur un poste de TP sans plateforme d'agrégation, l'application gère elle-même un fichier roté — la note explique pourquoi et borne le risque (10 Mo × 5).
+> ⚠️ **Écart assumé au 12-Factor** : le logger C maison écrit dans un fichier local roté et ne propose pas de sortie `stdout`. En conteneur, `podman logs` ne lit pas ce fichier automatiquement ; il faut configurer un agent de collecte ou un adaptateur distinct. La rotation borne le stockage local à 10 MiB × 5. Cette capacité de collecte reste à mettre en place au déploiement.
 
 ```
 HORODATAGE | NIVEAU | SERVICE | c=CLIENT | r=REQUÊTE | MODULE | message | clés=valeurs
@@ -862,7 +866,7 @@ HORODATAGE | NIVEAU | SERVICE | c=CLIENT | r=REQUÊTE | MODULE | message | clés
 | **Niveau** | `TRACE` `DEBUG` `INFO` `WARN` `ERROR` `FATAL`, **mêmes 6 niveaux des deux côtés** | `INFO` |
 | **Service** | `srv` ou `cli` — quel composant a écrit | `srv` |
 | **Identifiant client** | Celui du serveur ; `-` si aucun | `c=7` |
-| **Identifiant de demande** | **Le `request_id` du protocole (ENF-24)** — c'est la clé de voûte de la corrélation | `r=ab12f3` |
+| **Identifiant de demande** | **Le `request_id` du protocole (ENF-24)** — 12 chiffres hexadécimaux minuscules ; clé de corrélation | `r=ab12f3c4d5e6` |
 | **Module** | `net`, `protocol`, `chain`, `persistence`, `business`, `view`, `controller`, `net` (client) | `chain` |
 | **Message** | Court, **en anglais** (cohérence avec ENF-34) | `block mined` |
 | **Clés = valeurs** | Le contexte chiffré, en paires `clé=valeur` séparées par des espaces | `difficulty=4 nonce=31847 ms=812` |
@@ -870,38 +874,38 @@ HORODATAGE | NIVEAU | SERVICE | c=CLIENT | r=REQUÊTE | MODULE | message | clés
 **Ce que ça donne, une action vue des deux côtés** — la même demande suivie de bout en bout :
 
 ```
-2026-09-18T19:12:03.412Z | INFO  | srv | c=7 | r=ab12f3 | chain   | block mined          | difficulty=4 nonce=31847 hashes=72144 ms=812
-2026-09-18T19:12:03.655Z | INFO  | cli | c=7 | r=ab12f3 | net     | response received    | status=OK bytes=214
+2026-09-18T19:12:03.412Z | INFO | srv | c=7 | r=ab12f3c4d5e6 | chain | block mined | difficulty=4 nonce=31847 hashes=72144 ms=812
+2026-09-18T19:12:03.655Z | DEBUG | cli | c=7 | r=ab12f3c4d5e6 | net | response received | status=OK bytes=214
 ```
 
-> **Le MDC, des deux côtés.** `zlog` et Logback offrent tous deux un **MDC** (paires clé-valeur attachées à la ligne) : l'identifiant client et l'identifiant de demande y sont placés **une fois par connexion et par demande**, au lieu d'être répétés dans chaque appel de journalisation. C'est ce qui garantit que le format reste identique même quand le message change.
+> **Contexte de corrélation — contrat d'intégration.** Le logger C livré utilise un contexte local au fil (`animetcg_log_set_context`) et le copie dans les records. Le futur client Java est prévu avec SLF4J MDC, mais n'est pas présent dans ce checkout. À l'intégration, `client_id` et `request_id` devront être posés/effacés à chaque requête. Le TLS C ne se propage pas entre fils : une tâche transférée doit copier ces identifiants et reposer le contexte dans le thread destinataire. Le format partagé ne dépend d'aucun moteur C tiers.
 
-> C'est **tout** l'intérêt du `request_id` : il traverse la socket, il est journalisé par les deux programmes, et il permet de **recoller une action du client Java à son traitement par le serveur C** — sans lui, la centralisation ne donne qu'un tas de lignes triées par heure.
+> **Cible de corrélation REC-17** : une fois les appels Java et C raccordés au protocole, le même `request_id` doit permettre de relier une action cliente à son traitement serveur. Cette corrélation de bout en bout n'est pas encore démontrée dans le dépôt.
 
 #### 5.8.3. Centraliser les journaux des deux langages — trois niveaux
 
-**Niveau 0 — les deux programmes sur la même machine (cas de développement et de test, retenu par défaut).**
-Chacun écrit dans `logs/` : le serveur dans `logs/server.log`, chaque client dans `logs/client-<utilisateur>.log`. **Les deux formats étant identiques, la fusion tient en une commande** — c'est la récompense du format unique :
+**Niveau 0 — cible de développement et de test sur une machine.**
+À l'intégration, l'application C pourra passer `directory="logs"`, `filename="server.log"`; le client Java devra choisir son propre fichier rotatif, par exemple `logs/client-<utilisateur>.log`. Le logger C n'est pas automatiquement configuré sur ces chemins et le client Java n'est pas dans ce checkout : il s'agit d'une configuration cible, pas d'une recette e2e déjà effectuée.
 
 ```bash
-# Fusion chronologique des journaux du serveur et de tous les clients
+# À utiliser après création des fichiers par les deux applications
 sort -t'|' -k1,1 logs/server.log logs/client-*.log
 
-# Suivi en direct pendant une démonstration
-tail -f logs/server.log logs/client-*.log | sort -t'|' -k1,1
+# Suivre les fichiers en direct (l'ordre d'affichage dépend de leur arrivée)
+tail -F logs/server.log logs/client-*.log
 ```
 
-Un script `scripts/logs.sh` encapsule ces deux usages (dans l'arborescence du dépôt, §Q9.2). Le dossier `logs/` **n'est pas versionné** (`.gitignore`) : ce sont des données d'exécution.
+`sort` fusionne chronologiquement les fichiers terminés ; `tail -F` suit les fichiers sans prétendre réordonner les lignes. Un script `scripts/logs.sh` n'est pas encore livré. Le dossier d'exécution `logs/` doit rester non versionné.
 
 **Niveau 1 — les postes sont séparés (cas de la démonstration, 4 postes).**
-On passe par **l'outillage du système, pas par notre application** : le C écrit vers `syslog`, le client Java utilise le **`SyslogAppender`** de Logback, et **`systemd-journald`** centralise le tout sur la machine serveur.
+Le logger C actuel est limité au fichier local. Pour centraliser ses lignes, l'exploitation devra configurer un agent, par exemple rsyslog `imfile`, puis vérifier le transfert vers le collecteur. Le futur client Java pourra être configuré avec le `SyslogAppender` de Logback. **Ni les appels Java, ni l'agent, ni la configuration ne sont fournis ou testés dans le dépôt** ; ne pas annoncer que `journald` reçoit déjà les lignes C.
 
 ```bash
-# Tous les journaux AnimeTCG, du serveur et des clients, sur une seule sortie
+# Exemple après configuration effective du transfert de tous les producteurs vers journald
 journalctl -f -t animetcg-srv -t animetcg-client
 ```
 
-**Aucune ligne de code applicatif** : c'est de la configuration. Si les postes sont distants, `rsyslog` se configure pour rediriger vers la machine serveur (`*.* @@serveur:514`). Le format RFC 5424 qu'il utilise transporte l'horodatage et l'hôte d'origine, donc la fusion chronologique reste valable.
+La centralisation ne requiert pas de second canal **applicatif**, mais elle exige une configuration d'exploitation. Le format syslog peut porter l'horodatage et l'hôte d'origine ; la recette multi-postes reste à réaliser.
 
 **Niveau 2 — agrégateur central (Graylog/GELF, Fluentd) : 🎁 hors périmètre S3.**
 Supervision, tableau de bord, alertes. Utile en exploitation réelle, **surdimensionné pour la SAÉ** — à mentionner en soutenance comme évolution, pas à installer.
@@ -912,22 +916,22 @@ Supervision, tableau de bord, alertes. Utile en exploitation réelle, **surdimen
 
 | Piège | Pourquoi c'est grave | Parade retenue |
 |---|---|---|
-| **Écrire le journal depuis la boucle d'événements** | Une écriture disque lente bloque **tous** les clients : c'est exactement le défaut que **ENF-18** interdit. `zlog` est rapide (≈ 250 000 msg/s) mais **une écriture disque lente bloque toujours le fil appelant** | Côté C : le log est déposé dans une **file bornée** vidée par un **thread d'écriture dédié**. Côté Java : **appender asynchrone**. Si la file est pleine, l'entrée est **abandonnée** — on ne bloque **jamais** |
-| **Un journal qui grossit sans fin** | Disque plein en pleine démonstration | Côté C : **rotation native de `zlog`**, déclarée dans `zlog.conf` (10 Mo × 5 fichiers) — aucun outil externe. Côté Java : `RollingFileAppender` (10 Mo × 5). Total maximum borné à **50 Mo par programme** |
-| **Journaliser trop, ou trop sensible** | Bruit illisible ; et une charge utile complète peut contenir des données personnelles | On journalise des **identifiants, des compteurs et des durées**, jamais la charge utile complète ni un mot de passe. Le niveau est réglable **sans recompiler** (`ANIMETCG_LOG_LEVEL`, `logback.xml`) |
+| **Écrire le journal depuis la boucle d'événements** | Une écriture disque lente bloque **tous** les clients : c'est exactement le défaut que **ENF-18** interdit. Même un moteur rapide ne supprime pas le risque d'E/S bloquante sur le fil appelant | Côté C : le log est placé dans une **file bornée de 4096 records**, drainée par un thread écrivain dédié ; `pthread_mutex_trylock` transforme contention/saturation en perte comptée. Cible Java : **appender asynchrone** (à intégrer). L'appel producteur ne réessaie pas en boucle |
+| **Un journal qui grossit sans fin** | Disque plein en pleine démonstration | Côté C : rotation implémentée dans le logger maison à **10 MiB × 5 fichiers au total** (actif + 4 backups). Cible Java : `RollingFileAppender` (10 MiB × 5, à intégrer). Total nominal visé : **50 MiB par programme** |
+| **Journaliser trop, ou trop sensible** | Bruit illisible ; et une charge utile complète peut contenir des données personnelles | On journalise des **identifiants, des compteurs et des durées**, jamais la charge utile complète ni un mot de passe. Le niveau est réglable **sans recompiler** (`ANIMETCG_LOG_LEVEL`, configuration Logback cible (non livrée ici)`) |
 
 **Nouvelles exigences** (ajoutées au tableau du §5.5) :
 
 | Réf. | Exigence | Statut |
 |---|---|---|
-| ENF-55 🆕 | ✅ **Rédigée en §10 de `docs/specification-technique.md`** (10.2 : bibliothèques, licences, repli ; 10.10 : non-blocage ; 10.12 : 10 tests). Chaque composant journalise via **une bibliothèque dédiée** : **`zlog`** (C, libre, liée avec `-lzlog` ; repli documenté : `rxi/log.c`) et **SLF4J + Logback** (Java, via Maven — une **seule API est appelée**, SLF4J ; Logback est le moteur branché derrière). **Aucun `printf` / `System.out.println` de diagnostic** dans le code livré | 🔧 |
-| ENF-56 🆕 | ✅ **Grammaire ABNF normative en §10.3 de la spécification technique, complétée par la note de format de ligne `docs/note-format-ligne.md` v1.0** (vocabulaire fermé de 60 événements, clés normalisées, correspondance RFC 5424 / ECS / OpenTelemetry, contrat de compatibilité). **Format de ligne unique et documenté** pour les deux langages : `horodatage ISO 8601 UTC (ms) \| niveau \| service \| identifiant client \| identifiant de demande \| module \| message \| clés=valeurs`, une ligne par événement. Les journaux des deux programmes sont **fusionnables par un simple tri** | 🔧 |
-| ENF-57 🆕 | ✅ **Mécanismes chiffrés en §10.10 de la spécification technique** (file 4096 entrées ≈ 2 Mo, fil dédié, entrée abandonnée et comptée). La journalisation **ne bloque jamais** la boucle d'événements du serveur (ENF-18) ni le fil d'affichage JavaFX (ENF-42) : file bornée + thread d'écriture dédié côté serveur, appender asynchrone côté client | 🔧 |
-| ENF-58 🆕 | ✅ **Rédigée en §10.8 et §10.11 de la spécification technique** (rotation 10 Mo × 5, rétention 6 mois CNIL, droits 0640). Le **niveau de journalisation est réglable sans recompiler** (fichier de configuration, des deux côtés) ; les journaux sont **rotés** (10 Mo × 5 — rotation native de `zlog` côté serveur, `RollingFileAppender` côté client) ; ils ne contiennent **aucune donnée sensible** et leurs messages sont **en anglais** (cohérence ENF-34) | 🔧 |
+| ENF-55 🆕 | Logger dédié sans `printf` / `System.out.println` de diagnostic : cœur C maison dans `server/util/` livré ; choix cible Java SLF4J/Logback mais aucun code client/build Java dans ce checkout. Appels dans les couches serveur, client Java et e2e restent à faire. Voir DOC-09 §10, F-LOG-01 et GUIDE-LOG-01 | 🔧 cœur C livré/testé ; intégration à faire |
+| ENF-56 🆕 | Grammaire ABNF §10.3 et note `docs/note-format-ligne.md` **v1.4** : vocabulaire fermé de **70 événements** (dont `client address` en DEBUG), clés normalisées, mappings RFC 5424/ECS/OpenTelemetry et règles de compatibilité. Une ligne par événement ; les fichiers sont triables chronologiquement | 🔧 format/code C testés ; client Java/e2e à vérifier |
+| ENF-57 🆕 | File C bornée à **4096 records** (~2,01 MiB), writer dédié, insertion producteur par `trylock`, pertes comptées et synthèse `WARN`; appender Java asynchrone reste le choix cible, client absent. Cœur et tests de saturation/partial write dans `server/util/`; boucle d'événements serveur à intégrer | 🔧 cœur C livré/testé ; Java/e2e à faire |
+| ENF-58 🆕 | Seuil C configurable (`minimum_level`, `ANIMETCG_LOG_LEVEL`, API à chaud), rotation C **10 MiB × 5 fichiers au total**, droits 0750/0640 et règle privacy `ip` uniquement sur `client address` en DEBUG. `scripts/logs-purge.sh` purge les fichiers `*.log*` de plus de 180 j ; son ordonnanceur et la collecte inter-postes restent à configurer | 🔧 cœur C et script livrés/testés ; planification/centralisation/e2e à faire |
 
-**Critère de recette associé — REC-17** : les deux programmes produisent des journaux au même format, une **seule commande** les fusionne en ordre chronologique, et une action d'un client y est **traçable de bout en bout** grâce à son identifiant de demande.
+**Critère de recette associé — REC-17 (cible, non encore validée)** : après implémentation des appels Java et C, les deux programmes doivent produire des journaux au même format, une **seule commande** doit les fusionner en ordre chronologique, et une action cliente doit être **traçable de bout en bout** grâce à son identifiant de demande.
 
-**Coût** : **0 €** (deux bibliothèques libres ; `zlog` s'installe depuis les sources, sans licence ni abonnement), et **≈ 1 h 30** de mise en place. À montrer en soutenance : une action vue des deux côtés, dans un journal unique trié.
+**Coût logiciel** : **0 € pour le moteur C** (aucune bibliothèque de journalisation externe ; le code est dans le dépôt). Le temps d'intégration applicative, de configuration Java et de recette multi-postes n'est pas encore mesuré. À montrer en soutenance lorsque l'e2e sera raccordé : une action vue des deux côtés, dans un journal unique trié.
 
 ---
 
@@ -945,11 +949,11 @@ Le sujet 2026-2027 (§10) fixe une **liste blanche** et prévoit une **demande �
 | **JavaFX** | Interface graphique cliente | ✅ **Imposée** | — |
 | **JUnit** | Tests Java | ✅ **Autorisée nommément** | — |
 | **jansson** | Décodage JSON côté C (§5.3 de la spec technique) | ✅ **Retenue** — décision d'équipe (22/09/2026), **hors liste §10, déclarée** | Repli : analyseur JSON restreint écrit à la main (≈ 300 lignes, notre format de message est simple et borné) |
-| **zlog** (+ SLF4J/Logback côté Java) | Journalisation structurée (§5.8) | ✅ **Retenue** — décision d'équipe (22/09/2026), **hors liste §10, déclarée** | Repli : `rxi/log.c` (2 fichiers, à vendre dans le dépôt) côté C et `java.util.logging` côté Java — le **format de ligne reste identique** (note `docs/note-format-ligne.md`) |
+| **Logger C maison** (SLF4J/Logback = choix cible Java) | Journalisation structurée (§5.8) | Cœur C **implémenté dans le dépôt** ; aucun moteur C tiers. Java et son `pom.xml` sont absents/non intégrés dans ce checkout | Pas de repli de moteur côté C ; le format reste défini par `docs/note-format-ligne.md`. `java.util.logging` est une alternative Java historique non retenue |
 | **gcov / gcovr / JaCoCo** | Mesure de couverture (phase 3) | ✅ **Retenue** — décision d'équipe (22/09/2026) ; outil, non lié au binaire ; `gcov` fourni avec **GCC** | Repli : comptage manuel des cas couverts par les tests (le sujet de phase 3 précise qu'**aucun framework de tests C n'est installé**, ce que notre banc de tests maison respecte déjà) |
 | **libuv** | *(non retenue)* | ❌ **Écartée par décision d'équipe du 22/09/2026** | La boucle d'événements est **écrite à la main** (`epoll` + sockets BSD), conformément à la contrainte « sockets de A à Z » du sujet : aucune dépendance réseau, et un point d'explication au jury (annexe E) |
 
-**Ce que l'équipe s'impose elle-même** (plus exigeant qu'une autorisation, et vérifiable en soutenance) : ① les **versions sont figées** dans le dépôt (`third_party/`, `pom.xml`) et **listées** ci-dessus ; ② les **licences sont vérifiées** une par une (§12.5 de la spec technique) et les mentions obligatoires conservées ; ③ chaque dépendance reste **isolée derrière une façade** (`json_io.c`, `log.c`), de sorte qu'elle puisse être remplacée **sans toucher au métier** ; ④ les **replis** restent documentés — ils ne sont plus un plan B imposé, mais une **assurance** sur un projet à 4 étudiants dont le temps est partagé avec deux autres SAÉ.
+**Ce que l'équipe s'impose elle-même** (plus exigeant qu'une autorisation, et vérifiable en soutenance) : ① lorsqu'une dépendance sera intégrée, sa version sera figée dans le manifeste de build ou `third_party/` et listée ci-dessus ; ② les **licences sont vérifiées** avant intégration (§12.5 de la spec technique) et les mentions obligatoires conservées ; ③ chaque dépendance est isolée derrière une façade (ex. `log.c`) afin de pouvoir la remplacer sans toucher au métier ; ④ les **replis** restent documentés. **État du checkout du 14/10/2026** : `server/util/` ne lie aucun moteur C tiers, mais aucun `pom.xml`, code client Java, `third_party/` ou `THIRD-PARTY.md` n'est livré ; les entrées Java/JSON/C supplémentaires de cette section sont donc des choix/intentions à matérialiser, pas des dépendances compilées ici.
 
 > ⚠️ **Écart assumé et tracé** : le sujet écrit demande une autorisation écrite ; n'ayant plus d'encadrant, l'équipe **assume la décision** et produit la traçabilité que le sujet attend, sous forme de **déclaration signée par les 4 membres** (§5.9.1 et `THIRD-PARTY.md`). Chaque dépendance hors liste a un **repli** si le jury ou le build l'exige. En cas de question du jury le jour de la soutenance, la réponse est : *« notre encadrant nous a confirmé la liberté de choix ; voici la liste de nos dépendances, leurs licences et les replis prévus »*.
 
@@ -1026,9 +1030,9 @@ Chaque **pôle** est porté par un membre référent, avec un **doublage** assur
 | PostgreSQL local (éventuellement via Podman) | Sauvegarde de la blockchain | ✅ |
 | Dépôt GitLab `sae-301` | Versioning, livrables, suivi | ✅ |
 | **Runners d'intégration continue GitLab** | Compilation et tests automatiques à chaque push (ENF-49) | ✅ **Disponibles** (encadrant, 18/09/2026) |
-| jansson, zlog, libpq, JavaFX, JUnit, Maven | Bibliothèques de développement | Déclarées (§5.9.1) ; aucune licence payante |
+| jansson, libpq, JavaFX, JUnit, Maven, SLF4J/Logback | Ressources de développement prévues | Sélection/déclaration documentaire au §5.9.1 ; manifests/code correspondants absents de ce checkout (14/10/2026). Le logger C livré n'a pas de dépendance de moteur |
 | `gcov` (fourni avec GCC) + `gcovr`, **JaCoCo** (plugin Maven) | Mesure de couverture en **phase 3**, intégrée au pipeline CI | ✅ `gcov` déjà présent avec GCC ; `gcovr` et JaCoCo à installer (gratuits) |
-| **`zlog`** (bibliothèque C libre, `make install` ou image Podman) et **SLF4J + Logback** (Maven) | Journalisation des deux composants, format unique et centralisation — §5.8 | ✅ **0 €** ; installation de `zlog` **à vérifier sur le parc** (H3), avec repli `rxi/log.c` |
+| **Logger maison C** (`server/util/`) ; SLF4J/Logback pour Java (cible) | Journalisation visée des deux composants — §5.8 | ✅ cœur C dans le dépôt ; pas de code client/pom Java. Intégration applicative/Java/collecte multi-postes à terminer |
 | Outil UML (PlantUML versionné + éditeur graphique type draw.io / StarUML) | Diagrammes | ✅ |
 | Jeu de données d'animes pour la démonstration | Cartes crédibles et proches entre elles | À produire (M3, phase 2) |
 
@@ -1100,7 +1104,7 @@ Chaque **pôle** est porté par un membre référent, avec un **doublage** assur
 | # | Poste | Montant | Commentaire |
 |---|---|---|---|
 | B1 | Matériel informatique | **0 €** | Parc de l'IUT (postes Debian), postes personnels des membres |
-| B2 | Licences logicielles | **0 €** | jansson, zlog (LGPL v2), libpq, OpenSSL, JavaFX, JUnit, Maven, Podman, PostgreSQL, GitLab : libres ou fournis |
+| B2 | Licences logicielles | **0 €** | Logger C maison ; outils prévus/visés : jansson, libpq, OpenSSL, JavaFX, JUnit, SLF4J/Logback, Maven, Podman, PostgreSQL, GitLab (selon manifests futurs) ; aucune licence zlog requise |
 | B3 | Hébergement, serveurs, cloud | **0 €** | Exécution locale, aucun service externe |
 | B4 | Prestataires, sous-traitance | **0 €** | Travail interne à l'équipe |
 | B5 | Base de données | **0 €** | PostgreSQL local |
@@ -1335,7 +1339,7 @@ Le suivi porte donc uniquement sur **la consommation du temps par lot**. Un tabl
 | I5 | Volume horaire | Encadrant + Équipe | ✅ **Chiffré par le sujet 2026-2027** : 120 h/étudiant pour les trois projets, **60 % pour la SAÉ projet** → ≈ **72 h/étudiant** ; ⚠️ **volume réel non garanti** (Q8.3, 18/09/2026) |
 | I6 | Politique de branches et de commits imposée | Équipe | ✅ **Tranché le 22/09/2026** : **tronc stable + branche par fonctionnalité + merge request relue**, convention `type(scope): description` en anglais (ENF-39) |
 | I7 | Format du document de présentation (phase 4) | Équipe | ✅ **Tranché le 22/09/2026** : support **Markdown + export PDF** (slides), déposé sous le tag `phase4`, avec Gantt et scénario de démonstration |
-| I8 | Disponibilité des bibliothèques sur le parc | Équipe | ✅ **Clos le 22/09/2026** : choix **libre** (réponse de l'encadrant). Les cinq bibliothèques du sujet sont utilisées et les dépendances hors liste (**jansson**, **zlog**, **SLF4J/Logback**, **gcovr/JaCoCo**) sont **déclarées** en §5.9.1 — **aucune demande à envoyer** |
+| I8 | Disponibilité des bibliothèques sur le parc | Équipe | ✅ **Clos le 22/09/2026** : choix **libre** (réponse de l'encadrant). Les dépendances hors liste (**jansson**, **SLF4J/Logback**, **gcovr/JaCoCo**) sont **déclarées** en §5.9.1 — **aucune demande à envoyer**. Le logger C actif est maison et n'ajoute aucun moteur tiers |
 | I9 | Critères du « dépôt GitLab organisé et exploitable » | Équipe | ✅ **Tranché le 22/09/2026** : **grille interne** — tags `phase1`→`phase4`, README à jour, arborescence validée, **CI verte**, MR relues, aucun secret en clair (§5.10, annexe D) |
 | I10 | Arborescence du dépôt `sae-301` | Encadrant + Équipe | ✅ **Validée le 18/09/2026** : « **ça convient** » (Q9.2) ; cadre MVC confirmé par l'encadrant (ENF-50). Arborescence détaillée en **Q9.2** du questionnaire |
 | I11 | Outil UML et rendu attendu | Encadrant + Équipe | ✅ **Validé le 18/09/2026** : PlantUML pour les **sources** versionnées + **autres outils graphiques utilisés en complément** (Q9.1) ; exports commités ; granularité croissante ; **5 types de diagrammes maximum** (§5.7) |
@@ -1360,7 +1364,7 @@ Le suivi porte donc uniquement sur **la consommation du temps par lot**. Un tabl
 | Accès PostgreSQL | **libpq** | Connexion, requêtes paramétrées, sauvegarde et restauration |
 | Minage | worker dédié (thread) | Preuve de travail hors du chemin bloquant (ENF-18) |
 | Build | **Makefile** | Compilation, tests, cibles d'exécution et de nettoyage |
-| Journalisation | **`zlog`** (HardySimpson) — bibliothèque C libre à installer (`make install`), ou **embarquée dans l'image Podman**, liaison `-lzlog -lpthread` | Configuration externe (`zlog.conf`), niveaux libres, sorties multiples, **rotation native**, **MDC**, sûreté entre threads et entre processus, ≈ 250 000 msg/s ; `zlog-chk-conf` valide la configuration. **Repli** : `rxi/log.c` (2 fichiers, MIT, rien à installer) (ENF-55, §5.8.1) |
+| Journalisation | Logger **maison C** (`server/util/`, C11/POSIX/pthreads) (ENF-55, §5.8.1) | Catalogue fermé, champs typés, contexte TLS, file bornée 4096, writer dédié, niveau configurable, rotation 10 MiB × 5 fichiers ; aucune dépendance moteur C tierce |
 | Couverture de tests (phase 3) | **`gcov` + `gcovr`** | `gcov` est fourni avec GCC : compilation avec `--coverage`, le binaire s'instrumente tout seul. `gcovr` agrège les compteurs en un rapport **HTML** lisible et un **XML** consommable par le pipeline CI. Cible `make coverage` |
 
 > **Le serveur n'expose qu'un canal applicatif : le socket TCP.** Aucune bibliothèque de serveur web n'est utilisée. La gestion réseau repose entièrement sur les sockets et, côté C, sur une **boucle d'événements `epoll` écrite à la main** (libuv écartée le 22/09/2026).
@@ -1373,7 +1377,7 @@ Le suivi porte donc uniquement sur **la consommation du temps par lot**. Un tabl
 | Réseau | `java.net.Socket` | Connexion socket au serveur (ENF-04) |
 | Tests | **JUnit** | Tests unitaires et d'intégration |
 | Couverture de tests (phase 3) | **JaCoCo** | Agent d'instrumentation du bytecode + plugin `jacoco-maven-plugin` : rapport **HTML** et **XML** consommable par le pipeline CI. Seuils vérifiables en phase 3 (`jacoco:check`) |
-| Journalisation | **SLF4J** (interface appelée) + **Logback** (moteur branché derrière), déclarés dans `pom.xml` — **deux artefacts, une seule API dans le code** | Niveaux, `MDC` (identifiant client et identifiant de demande sur toutes les lignes), appenders console / fichier **rotatif** / **asynchrone** / **syslog** (ENF-55, §5.8.1). Le code n'appelle que l'API SLF4J |
+| Journalisation (cible, non livrée) | **SLF4J** (façade) + **Logback** (moteur visé) | Le client Java et `pom.xml` ne sont pas présents dans ce checkout : dépendances non compilées ni testées. Le futur client devra configurer ses niveaux, son contexte `MDC` et, si nécessaire, un appender rotatif/asynchrone/syslog (ENF-55, §5.8.1) |
 | Build et dépendances | **Maven** | Gestion de projet, exécution des tests |
 
 ### A.3. Architecture logicielle retenue
@@ -1394,7 +1398,7 @@ Le suivi porte donc uniquement sur **la consommation du temps par lot**. Un tabl
 | Intégration continue | **GitLab CI** — ✅ **runners disponibles** (encadrant, 18/09/2026) | Compilation + exécution des tests à chaque push (ENF-49) |
 | Versioning | **Git** + **GitLab** (`sae-301`) | Dépôt, tags de phase, revues |
 | Diagrammes | **UML** : PlantUML (sources versionnées) + éditeur graphique | Cas d'utilisation, classes, séquence, états |
-| Journaux | **Fichiers `logs/`** (développement) + **syslog / `systemd-journald`** (démonstration multi-postes) | Centralisation des journaux du serveur et des clients — §5.8.3. `zlog` sait écrire vers **syslog** directement, comme le `SyslogAppender` de Logback |
+| Journaux | **Fichiers `logs/`** (développement). Centralisation multi-postes envisageable via configuration rsyslog `imfile` (C) et `SyslogAppender` (Java) ; configuration et recette restent à faire | Le logger C maison ne fournit pas d'appender syslog ; voir §5.8.3 |
 | Documentation | Markdown + chaîne documentaire | Cahier des charges, spec technique, présentation |
 
 ### A.5. Points de vigilance liés à la pile
@@ -1448,8 +1452,8 @@ Le suivi porte donc uniquement sur **la consommation du temps par lot**. Un tabl
 - Supports cités par le sujet sur la blockchain : <https://www.geeksforgeeks.org/how-does-theblockchain-work/> et <https://www.geeksforgeeks.org/create-simple-blockchain-using-python/>.
 - **OpenSSL** — documentation de `SHA256()` et de la bibliothèque `libcrypto` : <https://docs.openssl.org/master/man3/SHA256_Init/>
 - **PostgreSQL du LAN de l'IUT** : instance `linserv-info-01` (sujet §10 et §8) — identifiants et base attribués en cours.
-- Spécification technique : `docs/specification-technique.md` (**DOC-09 v0.7**, 22/09/2026, 17 sections, **2 046 lignes**, **49 références**) — vivante jusqu'au tag `phase3`.
-- Note de format de ligne : `docs/note-format-ligne.md` (**v1.3**, 22/09/2026, 568 lignes) — référence de forme des journaux (§5.8.2, ENF-56).
+- Spécification technique : `docs/specification-technique.md` (**DOC-09 v0.9**, 14/10/2026, 17 sections) — vivante jusqu'au tag `phase3`.
+- Note de format de ligne : `docs/note-format-ligne.md` (**v1.4**, 14/10/2026, catalogue de 70 entrées) — référence normative du format et des clés (§5.8.2, ENF-56).
 - Audit de cohérence du corpus : `docs/audit-coherence-22-09.md` — vérification croisée des 11 documents, du DDL et des 28 exports (22/09/2026).
 - Diagrammes **UML** : sources `docs/uml/` + exports `docs/uml/exports/` (**14 diagrammes au 22/09/2026**, dont la séquence d'authentification), régénérables par `python3 docs/uml/render.py`.
 - Protocole applicatif : `docs/protocole-applicatif.md` (**v1.2**, 22/09/2026, 17 sections ; **3 comptes corrigés en relecture**, **authentification rétablie**, puis **réponses du questionnaire intégrées** : **23 actions, 22 événements, 30 codes**, partage ciblé et vote définitif).
@@ -1479,7 +1483,7 @@ Le suivi porte donc uniquement sur **la consommation du temps par lot**. Un tabl
 
 - SHA-256 — FIPS 180-4, *Secure Hash Standard*.
 - UML 2.5 — OMG Unified Modeling Language.
-- Journalisation en C — **`zlog`** : aucune dépendance externe (POSIX + C99), niveaux libres, format et destinations par fichier de configuration, **rotation native**, **MDC**, sûreté entre threads et entre processus, ≈ 250 000 messages/s : <https://github.com/HardySimpson/zlog> · fiche comparée des bibliothèques C (zlog ≈ 30–50 Ko, log4c, nanolog…) : <https://linuxvox.com/blog/logging-frameworks-for-embedded-linux/> · **repli sans installation** : `rxi/log.c` (2 fichiers, C99, MIT) : <https://github.com/rxi/log.c>
+- **Comparaison des loggers C — références, non dépendances** : zlog, documentation officielle du projet (catégories, sorties/configuration, MDC, rotation) : <https://github.com/HardySimpson/zlog> · rxi/log.c, README officiel (API C99, six niveaux, `FILE *`, callbacks et verrouillage) : <https://github.com/rxi/log.c> · log4c, site et documentation officiels (appenders, layouts, configuration XML, destinations fichier/syslog) : <https://log4c.sourceforge.net/>. La décision active est ADR-15 : logger C maison ; aucune de ces bibliothèques n'est intégrée.
 - Journalisation en Java — façade **SLF4J** : <https://www.slf4j.org/> · implémentation **Logback**, `MDC`, appenders rotatif et asynchrone, `SyslogAppender` : <https://logback.qos.ch/>
 - Bonnes pratiques de journalisation (niveaux, `MDC`, rotation, journalisation asynchrone, ne jamais journaliser de données sensibles) : <https://foojay.io/today/effective-java-logging/>
 - Syslog **RFC 5424** (horodatage ISO 8601, hôte d'origine) et configuration de `rsyslog` pour la centralisation : <https://unix.stackexchange.com/questions/621024/how-to-configure-rsyslogd-to-emit-rfc5424-messages>
@@ -1840,6 +1844,7 @@ Le sujet laisse **dix-sept choix** ouverts et demande qu'ils soient « explicit�
 
 | Version | Date | Auteur | Modifications |
 |---|---|---|---|
+| **0.25** | **14/10/2026** | Équipe SAÉ | **Journalisation C harmonisée et livrée en composant autonome.** Comparaison documentée de zlog, rxi/log.c et log4c à partir de leurs sources officielles ; décision explicite **ADR-15** : logger maison dans `server/util/`, qui remplace l'ancienne décision zlog + repli rxi/ADR-05 sans retirer son historique. API C11/POSIX à champs typés, catalogue de **70 événements** avec `client address` immédiatement après `client connected` (DEBUG, clé `ip` exclusivement autorisée sur cet événement), file 4096, writer dédié, rotation 10 MiB × 5, récupération d'une fin partielle, harnais C maison (tests et ASan/UBSan passés ; Valgrind indisponible) et documentation F-LOG-01 / GUIDE-LOG-01 / DOC-09 / note v1.4 alignés. Ajout de `scripts/logs-purge.sh` avec mode `--dry-run`, validé sur des fichiers temporaires. **L'intégration des appels métier, le client Java et la recette e2e/multi-postes restent à réaliser.** |
 | **0.3** | **18/09/2026** | Équipe SAÉ | **Réponses de l'encadrant intégrées** : domaine anime **validé** (DEC-01) ; **difficulté de preuve de travail recadrée sur 3 ou 4** zéros, calibrée par mesure sur la machine, avec journalisation et affichage des hachages/nonce/durée (DEC-20, ENF-15, REC-06, annexe D.1) et l'exploration à difficulté supérieure repositionnée en **bonus conditionnel de fin de projet** ; **tests et couverture repositionnés en phase 3** après premier prototype (O6, O7, ENF-36, annexe D.4), mise en place des tests dès la phase 2, outillage libre (gcov/lcov, JaCoCo, SonarQube en R402) ; **UML** : PlantUML validé, modélisation itérative à granularité croissante, **5 types de diagrammes maximum** — correction du sujet — et contenu de phase 1 précisé (§5.7, O9) ; équipe de **4 étudiants acceptée** et volume horaire cadré (ressource SAÉ 301 = 60 % du temps de SAÉ : DEC-17, H8, §6.2) ; ajout du bloc **« Décisions validées par l'encadrant »** en tête de document ; ajout de l'action **I12** (resynchronisation avec le cahier des charges officiel mis à jour). |
 | **0.24** | **22/09/2026** | Équipe SAÉ | **Valeurs par défaut retenues comme définitives — une seule exception : le minage** ① **Minage** : la cible passe de « ≤ 1 s » à la **fourchette 0,3 s – 2 s** (§2.2 O3, §5.2.1, annexe D.1 : `k=4` dès 32 768 h/s, réévaluation hors [0,3 ; 2], délai de garde 4 s, borne basse expliquée) ; ② **Tous les autres défauts sont entérinés** : file **100/60 s**, 8 demandes en vol, heartbeat 60 s, `JSON_MAX_DEPTH` 32, port **7001**, `linserv-info-01` en recette / Podman en développement, **partage ciblé inscrit en blockchain** (option A), pseudo déjà connecté → **reprise de session**, bot de maintenance = charge + vérification de chaîne, bibliothèques hors liste déclarées, **sign-off du protocole** ; ③ **arbitrages internes clos** : Q4.1 ↔ Q2.6 (les droits restent sur la perdante), Q1.4 ↔ Q2.6 (deux sorties distinctes), Q4.2 (le mois court **depuis la demande**), Q2.1 (titre **ou** format), Q4.3 (aucun prix en points) ; ④ **seul point encore ouvert : I2** — les noms sur les 4 pôles ⓘ Vérification de cohérence du corpus passée le même jour (`docs/audit-coherence-22-09.md`) : 44 corrections appliquées, 0 incohérence résiduelle. |
 | **0.23** | **22/09/2026** | Équipe SAÉ | **Décisions prises en autonomie — l'équipe n'a plus d'encadrant** (`questions-encadrant.md` v5) : ① **authentification maintenue** (R19 close — le sujet écrit l'exige, DEC-24 confirmée) ; ② **barème du sujet appliqué au mot** + critères internes écrits pour le « dépôt organisé et exploitable » (R1, I6, I9, I13) ; ③ **boucle d'événements écrite à la main (`epoll`), libuv écarté** (R2, I15, annexe A.1) ; ④ **volume ≈ 72 h/étudiant = hypothèse de planification non garantie** (R3, I14) ; ⑤ **rendu de phase 1 = document unique de spécification technique** (Markdown + PDF, tag `phase1`, UML intégrés **et** sources PlantUML — R5, I16) ; ⑥ **4 clients humains minimum en démonstration** (R6) ; ⑦ questions d'appoint tranchées (R7 à R15) ; ⑧ **H7** : la validation des choix métier devient **interne et tracée** ; ⑨ bibliothèques hors liste **retenues et déclarées avec repli**, plus aucune demande d'autorisation. **Second volet de la même journée** : les 13 questions qui portaient encore une « proposition par défaut » sont **tranchées** et le cahier des charges est mis en cohérence : ① **carte** : 11 champs obligatoires, **doublons autorisés**, composants (titre, personnages, lieux, objets, thèmes, liens), **100 cartes actives** au lieu de 10, **archivage** après défaite (l'état `ARCHIVEE` remplace `FUSIONNEE`) ; ② **proximité** : **titre (sans casse) + format** (P1…P5 abandonnés) et **rangs voisins** pour ouvrir une battle ; ③ **vote** : **5 minutes**, **définitif**, créateur/propriétaires exclus, égalité → **la plus ancienne**, quorum non atteint ou **0 vote** → **battle annulée et cartes rendues** ; ④ **droits après une défaite** : **inchangés** sur la perdante (la règle d'héritage de la version 0.21 est retirée) ; ⑤ **valeurs** : `points de reco × multiplicateur de rareté` (fer → platine) et **total des votes des cartes possédées** ; ⑥ **légitimation par likes** (le scrutin de 60 s disparaît) ; ⑦ **bot** : test **et** maintenance, **affiché** avec un marqueur distinct, votes hors quorum en production ; ⑧ **partage ciblé RETENU** (liste d'amis, notification socket, **hors blockchain**, anti-spam 3 puis 1/min) ; ⑨ **IHM** : onglet `Amis`, image de couverture par l'utilisateur, écran de connexion, journal d'activité ; ⑩ **DEC-19** : 9 cas prioritaires. Détail, écarts et points restés ouverts : `questionnaire-decisions.md` (§ Réponses de l'équipe) |
