@@ -646,11 +646,14 @@ Le champ `block_index` est unique ; deux workers ne doivent jamais lire le même
 ```c
 /* Après BEGIN, avant la lecture du tip. Le SELECT retourne PGRES_TUPLES_OK. */
 PGresult *lock = PQexec(db, "SELECT pg_advisory_xact_lock(301, 1)");
-if (lock == NULL || PQresultStatus(lock) != PGRES_TUPLES_OK) {
-    if (lock != NULL) PQclear(lock);
-    goto rollback;
+bool lock_ok = lock != NULL && PQresultStatus(lock) == PGRES_TUPLES_OK;
+if (lock != NULL) {
+    PQclear(lock);
 }
-PQclear(lock);
+if (!lock_ok) {
+    (void)pg_command_ok(db, "ROLLBACK");
+    return false; /* La fonction appelante traite l'erreur de persistance. */
+}
 ```
 
 Verrouiller dans la transaction puis lire le dernier hash :
@@ -900,39 +903,41 @@ L’événement conserve les paramètres validés tels qu’ils ont été décid
 ### Séquence de transaction côté serveur
 
 ```c
-bool tx_open = false;
+bool transaction_open = false;
+bool committed = false;
 canonical_json_t canonical = {NULL, 0u};
 json_t *event = NULL;
 
-if (!pg_command_ok(db, "BEGIN")) goto cleanup;
-tx_open = true;
-if (!pg_lock_chain_writer(db)) goto rollback;
-if (!pg_read_tip(db, &next_index, previous_hash)) goto rollback;
-if (!reserve_card_id_if_needed(db, &card_id)) goto rollback;
-if (!build_validated_event(request, session, card_id, &event)) goto rollback;
-if (!payload_jcs_canonicalize(event, &canonical)) goto rollback;
-if (!make_block(next_index, previous_hash, fixed_timestamp_ms, action_id,
-                measured_hash_rate, &canonical, &block, &attempts)) goto rollback;
-if (!pg_insert_block(db, &block, action_type, &canonical)) goto rollback;
-if (!pg_apply_projection(db, event, block.header.block_index)) goto rollback;
-if (!pg_command_ok(db, "COMMIT")) goto rollback;
-tx_open = false;
+if (pg_command_ok(db, "BEGIN")) {
+    transaction_open = true;
+    if (pg_lock_chain_writer(db) &&
+        pg_read_tip(db, &next_index, previous_hash) &&
+        reserve_card_id_if_needed(db, &card_id) &&
+        build_validated_event(request, session, card_id, &event) &&
+        payload_jcs_canonicalize(event, &canonical) &&
+        make_block(next_index, previous_hash, fixed_timestamp_ms, action_id,
+                   measured_hash_rate, &canonical, &block, &attempts) &&
+        pg_insert_block(db, &block, action_type, &canonical) &&
+        pg_apply_projection(db, event, block.header.block_index) &&
+        pg_command_ok(db, "COMMIT")) {
+        committed = true;
+    }
+}
+
+if (transaction_open && !committed) {
+    /* Une seule sortie de transaction, sans saut vers une étiquette. */
+    (void)pg_command_ok(db, "ROLLBACK");
+}
 
 /* Après le COMMIT seulement : envoyer RES OK, puis diffuser EVT. */
-if (!send_success_response(client_fd, request_id, &block, card_id)) {
+if (committed &&
+    !send_success_response(client_fd, request_id, &block, card_id)) {
     /* La transaction est déjà commitée : ne pas annoncer un rollback fictif. */
     log_client_disconnect_after_commit(request_id, block.header.block_index);
 }
-goto cleanup;
-
-rollback:
-if (tx_open) {
-    (void)pg_command_ok(db, "ROLLBACK");
-    tx_open = false;
-}
-cleanup:
 canonical_json_free(&canonical);
 json_decref(event);
+return committed;
 ```
 
 Les appels `pg_lock_chain_writer`, `pg_read_tip`, `reserve_card_id_if_needed`, `build_validated_event`, `pg_apply_projection` et `send_success_response` représentent des helpers à écrire dans les couches correspondantes. Le bloc ci-dessus montre l’ordre des opérations et la règle d’ownership ; il n’est pas un fichier compilable autonome.
@@ -1020,36 +1025,32 @@ if (status != CRYPTO_OK) {
 `crypto_verify_chain()` attend un tableau contigu et renvoie la première erreur. Le loader PostgreSQL doit donc allouer un tableau de blocs et un tampon possédé par payload, puis les libérer après la vérification :
 
 ```c
-crypto_status_t status = CRYPTO_OK;
+crypto_status_t status = CRYPTO_ERR_ARGUMENT;
 crypto_block_t *blocks = NULL;
 uint8_t **payloads = NULL;
 
 if (block_count == 0u) {
     status = CRYPTO_ERR_CHAIN_EMPTY;
-    goto cleanup;
-}
-if (block_count > SIZE_MAX / sizeof(*blocks) ||
-    block_count > SIZE_MAX / sizeof(*payloads)) {
+} else if (block_count > SIZE_MAX / sizeof(*blocks) ||
+           block_count > SIZE_MAX / sizeof(*payloads)) {
     status = CRYPTO_ERR_ARGUMENT; /* dans le loader, préférez un statut DB dédié */
-    goto cleanup;
+} else {
+    blocks = calloc(block_count, sizeof(*blocks));
+    payloads = calloc(block_count, sizeof(*payloads));
+    if (blocks == NULL || payloads == NULL) {
+        /* Conserver le statut d'erreur et passer au nettoyage commun. */
+    } else {
+        /* Pour chaque ligne i : payloads[i] = malloc(payload_len);
+         * décoder les octets, puis :
+         * blocks[i].payload_canon = payloads[i];
+         * blocks[i].payload_canon_len = payload_len;
+         * remplir blocks[i].header et blocks[i].hash.
+         */
+        status = crypto_verify_chain(blocks, block_count, &report);
+    }
 }
-blocks = calloc(block_count, sizeof(*blocks));
-payloads = calloc(block_count, sizeof(*payloads));
-if (blocks == NULL || payloads == NULL) {
-    /* Remplacer par une erreur mémoire du serveur, puis passer au cleanup. */
-    goto cleanup;
-}
 
-/* Pour chaque ligne i : payloads[i] = malloc(payload_len);
- * décoder les octets, puis :
- * blocks[i].payload_canon = payloads[i];
- * blocks[i].payload_canon_len = payload_len;
- * remplir blocks[i].header et blocks[i].hash.
- */
-
-status = crypto_verify_chain(blocks, block_count, &report);
-
-cleanup:
+/* Une seule sortie de fonction libère toutes les ressources possédées. */
 if (payloads != NULL) {
     for (size_t i = 0u; i < block_count; ++i) {
         free(payloads[i]); /* free(NULL) est autorisé */
@@ -1058,6 +1059,7 @@ if (payloads != NULL) {
 free(payloads);
 free(blocks);
 if (result != NULL) PQclear(result);
+return status;
 ```
 
 En vrai code, contrôlez avant les allocations `block_count <= SIZE_MAX / sizeof(*blocks)`, la taille totale des payloads et votre budget mémoire. La table n’a pas de nombre maximal de blocs et l’API actuelle reçoit toute la chaîne en mémoire. Pour une longue chaîne, il faut ajouter un vérificateur incrémental/streaming ou une politique de vérification par segments qui transporte le hash attendu d’un segment au suivant ; ne chargez pas une base illimitée dans une seule allocation.

@@ -1,0 +1,3 @@
+# Enforce ES.76; make -C server lint also rejects every C goto, including forward jumps.
+Checks: '-*,cppcoreguidelines-avoid-goto'
+WarningsAsErrors: 'cppcoreguidelines-avoid-goto'

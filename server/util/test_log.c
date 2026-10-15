@@ -56,7 +56,7 @@ static void test_fail(const char *file, int line, const char *format, ...)
     do { \
         if (!(condition_)) { \
             test_fail(__FILE__, __LINE__, __VA_ARGS__); \
-            goto cleanup; \
+            return false; \
         } \
     } while (0)
 
@@ -329,7 +329,7 @@ static bool remove_test_directory(const char *directory)
     return true;
 }
 
-int main(void)
+static bool run_test_suite(void)
 {
     animetcg_log_config_t config;
     animetcg_log_stats_t stats_before;
@@ -348,15 +348,14 @@ int main(void)
     bool found_decimal = false;
     size_t index;
     size_t batches;
-    bool ok = false;
     struct stat directory_info;
 
     if (unsetenv("ANIMETCG_LOG_LEVEL") != 0) {
         test_fail(__FILE__, __LINE__, "unsetenv failed");
-        goto cleanup;
+        return false;
     }
     if (!check_sanitizer()) {
-        goto cleanup;
+        return false;
     }
     ASSERT_TEST(animetcg_log_event_count() == 70u,
           "catalogue contains %zu events, expected 70",
@@ -367,7 +366,7 @@ int main(void)
 
     if (mkdtemp(TEST_DIRECTORY) == NULL) {
         test_fail(__FILE__, __LINE__, "mkdtemp failed: %s", strerror(errno));
-        goto cleanup;
+        return false;
     }
     ASSERT_TEST(seed_test_log_with_incomplete_tail(TEST_DIRECTORY),
           "could not seed active log with a valid record and partial tail");
@@ -584,9 +583,13 @@ int main(void)
           "logger reported %" PRIu64 " I/O errors; expected the injected short write only",
           stats_after.io_errors);
 
-    ok = true;
+    return true;
+}
 
-cleanup:
+int main(void)
+{
+    bool ok = run_test_suite();
+
     if (LOGGER_TEST_INITIALIZED) {
         (void)animetcg_log_test_pause_writer(false);
         if (animetcg_log_shutdown() != ANIMETCG_LOG_OK) {
@@ -596,13 +599,13 @@ cleanup:
         LOGGER_TEST_INITIALIZED = false;
     }
     if (access(TEST_DIRECTORY, F_OK) == 0) {
-        if (ok) {
+        if (ok && TEST_FAILURES == 0) {
             if (!remove_test_directory(TEST_DIRECTORY)) {
                 test_fail(__FILE__, __LINE__, "could not remove temporary log directory");
                 ok = false;
             }
         } else {
-            (void)fprintf(stderr, "retaining failed-test logs at %s\\n", TEST_DIRECTORY);
+            (void)fprintf(stderr, "retaining failed-test logs at %s\n", TEST_DIRECTORY);
         }
     }
     if (!ok || TEST_FAILURES != 0) {

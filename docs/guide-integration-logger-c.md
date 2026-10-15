@@ -206,7 +206,7 @@ static void run_job(const request_job_t *job)
 }
 ```
 
-En cas de sortie anticipée après l'installation du contexte, utiliser un bloc de nettoyage commun (`goto cleanup`) pour toujours appeler `animetcg_log_clear_context()`. Un contexte oublié peut associer le prochain travail du même thread au mauvais client.
+Pour gérer les erreurs sans `goto`, place le traitement dans une fonction auxiliaire qui retourne un statut ; la fonction enveloppe appelle ensuite toujours `animetcg_log_clear_context()` avant de retourner. Un contexte oublié peut associer le prochain travail du même thread au mauvais client.
 
 Pour un événement sans requête ni client, poser explicitement `ANIMETCG_LOG_NO_CLIENT_ID` et `NULL`, ou effacer le contexte, avant de loguer.
 
@@ -321,6 +321,7 @@ Le script ne crée pas de timer : la fréquence, les droits, la supervision et l
 ### Tests avant merge
 
 ```sh
+make -C server lint
 make -C server/util clean test
 make -C server/util sanitize
 ```
